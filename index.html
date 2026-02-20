@@ -475,7 +475,7 @@
         },
         physics: {
           maxSpeed: 0.85, // Slightly lower for easier control
-          boostSpeed: 1.3,
+          boostSpeed: 1.05, // Smoother, less overwhelming; ramp-up in physics
           acceleration: 0.0045, // Faster, cooler feel while staying smooth
           friction: 0.98,
           carveFriction: 0.997, // With Up: preserve speed during aggressive turns (gradual speed decrease)
@@ -505,6 +505,7 @@
           maxLives: 3,
           invincibleTime: 600,
           dynamiteTime: 300,
+          boostDuration: 180, // Frames (e.g. 3 s at 60 fps)
           baseSpawnRate: 0.2,
         },
         world: {
@@ -520,6 +521,8 @@
       let obstacles = [];
       let particles = [];
       let effects = []; // Ring effects etc
+      let boostTrail = []; // Glowing skid marks while speed boost active
+      let boostTrailSpawnCounter = 0;
       let cameraShake = { x: 0, y: 0, intensity: 0 };
 
       // GAME STATE
@@ -544,6 +547,8 @@
         dynamiteTimer: 0,
         dynamiteJumpCount: 0,
         hasDynamite: false,
+        boostTimer: 0, // Frames remaining of speed boost (smooth ramp-up, then decay)
+        boostTargetSpeed: 0, // Target speed during boost (set when activating; MEGA uses higher value)
       };
       let frameId;
       let initRetries = 0;
@@ -856,13 +861,53 @@
           mesh.castShadow = true;
           mesh.userData = { radius: 0.6, type: "rock", height: 1 };
         } else if (type === "boost") {
-          mesh = new THREE.Mesh(
+          const padGroup = new THREE.Group();
+          const padPlane = new THREE.Mesh(
             new THREE.PlaneGeometry(2, 6),
             new THREE.MeshBasicMaterial({ color: CONFIG.colors.boost }),
           );
-          mesh.rotation.x = -Math.PI / 2;
-          mesh.position.y = 0.05;
-          mesh.userData = { radius: 1.5, type: "boost", height: 0.1 };
+          padPlane.rotation.x = -Math.PI / 2;
+          padPlane.position.y = 0.05;
+          padGroup.add(padPlane);
+          // White forward arrow (chevron) for visibility
+          const arrowShape = new THREE.Shape();
+          arrowShape.moveTo(0, 0.5);
+          arrowShape.lineTo(-0.25, -0.5);
+          arrowShape.lineTo(0, -0.25);
+          arrowShape.lineTo(0.25, -0.5);
+          arrowShape.lineTo(0, 0.5);
+          const arrowGeo = new THREE.ShapeGeometry(arrowShape);
+          const arrowMat = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 1.0,
+            side: THREE.DoubleSide,
+          });
+          const arrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
+          arrowMesh.scale.set(4, 4, 4); // Larger for better visibility
+          arrowMesh.rotation.x = -Math.PI / 2; // Lay flat on ground
+          arrowMesh.position.y = 0.08; // Above the pad plane (pad is at 0.05)
+          arrowMesh.position.z = 0; // Start at center, will animate sliding forward
+          padGroup.add(arrowMesh);
+          
+          // Add a second arrow offset for better visibility
+          const arrowMesh2 = new THREE.Mesh(arrowGeo, arrowMat.clone());
+          arrowMesh2.scale.set(4, 4, 4);
+          arrowMesh2.rotation.x = -Math.PI / 2;
+          arrowMesh2.position.y = 0.08;
+          arrowMesh2.position.z = -1.2; // Offset behind first arrow (within pad bounds)
+          padGroup.add(arrowMesh2);
+          
+          padGroup.userData = {
+            radius: 1.5,
+            type: "boost",
+            height: 0.1,
+            arrowMesh: arrowMesh,
+            arrowMesh2: arrowMesh2,
+            arrowPhase: Math.random() * Math.PI * 2,
+          };
+          mesh = padGroup;
+          mesh.position.y = 0;
         } else if (type === "box") {
           mesh = new THREE.Mesh(
             new THREE.BoxGeometry(1.5, 1.5, 1.5),
@@ -985,7 +1030,8 @@
               triggerNotification("TRAP! JUMP x2!", "#e74c3c");
             }
           } else if (rand < 0.3) {
-            speed = CONFIG.physics.boostSpeed * 1.2;
+            playerStats.boostTimer = CONFIG.game.boostDuration;
+            playerStats.boostTargetSpeed = CONFIG.physics.boostSpeed * 1.15;
             triggerNotification("MEGA BOOST!");
           } else if (rand < 0.7) {
             if (playerStats.lives < CONFIG.game.maxLives) {
@@ -1015,7 +1061,8 @@
               );
             }
           } else if (rand < 0.4) {
-            speed = CONFIG.physics.boostSpeed;
+            playerStats.boostTimer = CONFIG.game.boostDuration;
+            playerStats.boostTargetSpeed = CONFIG.physics.boostSpeed;
             triggerNotification("SPEED BOOST!");
           } else if (rand < 0.6) {
             playerStats.hp = Math.min(playerStats.hp + 30, CONFIG.game.maxHP);
@@ -1084,9 +1131,13 @@
         playerStats.didJumpThisAirtime = false;
         playerStats.rampLaunchFramesAgo = null;
         playerStats.canRampAssistJump = false;
+        playerStats.boostTimer = 0;
+        playerStats.boostTargetSpeed = 0;
         dynamiteMesh.visible = false;
         playerStats.invincibleTimer = 0;
         shieldMesh.visible = false;
+        boostTrail.forEach((m) => scene.remove(m.mesh));
+        boostTrail.length = 0;
         obstacles.forEach((o) => scene.remove(o));
         obstacles.length = 0;
         for (let i = 1; i < 25; i++) spawnChunk(-i * 10);
@@ -1120,6 +1171,25 @@
         p.position.copy(position);
         scene.add(p);
         particles.push({ mesh: p, velocity: velocity, life: 1.0 });
+      }
+
+      function createBoostTrailMark(position) {
+        const geo = new THREE.PlaneGeometry(0.8, 2.0);
+        const mat = new THREE.MeshBasicMaterial({
+          color: 0xadff2f,
+          transparent: true,
+          opacity: 0.7,
+          side: THREE.DoubleSide,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.copy(position);
+        mesh.position.y = 0.01;
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.rotation.y = playerAngle;
+        scene.add(mesh);
+        const entry = { mesh, life: 1.0, position: position.clone() };
+        boostTrail.push(entry);
+        return entry;
       }
 
       function updatePhysics() {
@@ -1225,8 +1295,15 @@
               : 0.55;
         }
 
-        if (speed > CONFIG.physics.maxSpeed) {
-          speed *= 0.99; // Decay boost
+        // --- BOOST TIMER (smooth ramp-up, then natural decay when timer ends) ---
+        const boostSpeed = CONFIG.physics.boostSpeed;
+        if (playerStats.boostTimer > 0) {
+          const target = playerStats.boostTargetSpeed || boostSpeed;
+          speed += (target - speed) * 0.12;
+          speed = Math.min(speed, target);
+          playerStats.boostTimer--;
+        } else if (speed > CONFIG.physics.maxSpeed) {
+          speed *= 0.99; // Decay boost after timer ends
         } else {
           speed += accel;
 
@@ -1369,6 +1446,19 @@
           if (playerStats.invincibleTimer <= 0) shieldMesh.visible = false;
         }
 
+        // --- BOOST TRAIL (glowing skid marks while boosting, on ground) ---
+        if (
+          playerStats.boostTimer > 0 &&
+          !playerStats.isJumping &&
+          speed > 0.1
+        ) {
+          boostTrailSpawnCounter++;
+          if (boostTrailSpawnCounter % 4 === 0)
+            createBoostTrailMark(playerGroup.position.clone());
+        } else {
+          boostTrailSpawnCounter = 0;
+        }
+
         // --- JUMPING (one jump per press; holding Space = single high jump) ---
         if (input.jump && !playerStats.isJumping) {
           playerStats.isJumping = true;
@@ -1464,6 +1554,24 @@
             ob.rotation.x += 0.02;
             ob.rotation.y += 0.03;
           }
+          if (ob.userData.type === "boost" && ob.userData.arrowMesh) {
+            const arrow = ob.userData.arrowMesh;
+            const arrow2 = ob.userData.arrowMesh2;
+            // Slower, smoother phase increment for opacity pulse
+            ob.userData.arrowPhase = (ob.userData.arrowPhase || 0) + 0.04;
+            // Slower slide forward (toward -Z, direction of travel)
+            // Pad is 6 units long (from -3 to +3), keep arrows within -2.5 to +2.5
+            arrow.position.z -= 0.04;
+            if (arrow.position.z < -2.5) arrow.position.z += 5; // Wrap smoothly within pad bounds
+            if (arrow2) {
+              arrow2.position.z -= 0.04;
+              if (arrow2.position.z < -2.5) arrow2.position.z += 5;
+            }
+            // Smoother opacity pulse
+            const opacity = 0.65 + 0.35 * Math.sin(ob.userData.arrowPhase);
+            arrow.material.opacity = Math.max(0.5, Math.min(1, opacity));
+            if (arrow2) arrow2.material.opacity = Math.max(0.5, Math.min(1, opacity));
+          }
 
           if (ob.position.z > playerGroup.position.z + 10) {
             scene.remove(ob);
@@ -1477,7 +1585,8 @@
             const hitRadius = ob.userData.radius + 0.3;
             if (dist < hitRadius) {
               if (ob.userData.type === "boost") {
-                speed = CONFIG.physics.boostSpeed;
+                playerStats.boostTimer = CONFIG.game.boostDuration;
+                playerStats.boostTargetSpeed = CONFIG.physics.boostSpeed;
                 triggerNotification("BOOST!");
               } else if (ob.userData.type === "ramp") {
                 // Hit Ramp: low launch; tap Space anytime in the next ~0.8s for assisted jump to elevated box
@@ -1554,6 +1663,16 @@
           if (e.opacity <= 0) {
             scene.remove(e.mesh);
             effects.splice(i, 1);
+          }
+        }
+        // Boost trail (glowing skid marks fade out)
+        for (let i = boostTrail.length - 1; i >= 0; i--) {
+          const mark = boostTrail[i];
+          mark.life -= 0.02;
+          mark.mesh.material.opacity = mark.life * 0.7;
+          if (mark.life <= 0) {
+            scene.remove(mark.mesh);
+            boostTrail.splice(i, 1);
           }
         }
       }
