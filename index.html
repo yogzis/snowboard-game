@@ -1,0 +1,1525 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <title>Summit Shredder 3D</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap");
+
+      * {
+        box-sizing: border-box;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background-color: #87ceeb;
+        font-family: "Fredoka", sans-serif;
+        touch-action: none;
+      }
+
+      canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 1;
+      }
+
+      #ui-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        z-index: 10;
+      }
+
+      .hud-top {
+        padding: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        color: #2c3e50;
+        text-shadow: 1px 1px 0px rgba(255, 255, 255, 0.5);
+        font-size: 24px;
+        font-weight: 600;
+        width: 100%;
+      }
+
+      .stats-left {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .stats-right {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 10px;
+      }
+
+      /* Health Bar */
+      .hp-container {
+        width: 200px;
+        height: 24px;
+        background: rgba(0, 0, 0, 0.3);
+        border: 2px solid #fff;
+        border-radius: 12px;
+        overflow: hidden;
+        position: relative;
+      }
+
+      #hp-bar {
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, #e74c3c, #c0392b);
+        transition: width 0.2s;
+      }
+
+      #hp-text {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 14px;
+        color: white;
+        text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
+      }
+
+      .lives-container {
+        font-size: 24px;
+        color: #e74c3c;
+        letter-spacing: 2px;
+      }
+
+      #score-display span {
+        color: #e74c3c;
+      }
+
+      /* Notification Area */
+      #notification-area {
+        position: absolute;
+        top: 20%;
+        left: 50%;
+        transform: translateX(-50%);
+        text-align: center;
+        font-size: 30px;
+        font-weight: bold;
+        color: #f1c40f;
+        text-shadow: 2px 2px 0 #000;
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+
+      /* Pause Button */
+      #pause-btn {
+        pointer-events: auto;
+        background: rgba(255, 255, 255, 0.5);
+        border: 2px solid #fff;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        cursor: pointer;
+        margin-top: 10px;
+        color: #2c3e50;
+        transition: background 0.2s;
+      }
+      #pause-btn:hover {
+        background: rgba(255, 255, 255, 0.9);
+      }
+
+      /* Menus */
+      .overlay-menu {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.6);
+        backdrop-filter: blur(8px);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        pointer-events: auto;
+        transition: opacity 0.3s;
+        z-index: 20;
+      }
+
+      h1 {
+        font-size: 60px;
+        margin: 0 0 10px 0;
+        color: #2c3e50;
+        text-shadow: 2px 2px 0px #fff;
+        text-align: center;
+        line-height: 1;
+        font-style: italic;
+      }
+
+      h2 {
+        font-size: 40px;
+        color: #2c3e50;
+        margin-bottom: 30px;
+      }
+
+      p.subtitle {
+        font-size: 20px;
+        color: #546e7a;
+        margin-bottom: 40px;
+        text-align: center;
+      }
+
+      .btn {
+        background: #e74c3c;
+        color: white;
+        border: none;
+        padding: 15px 40px;
+        font-size: 24px;
+        border-radius: 50px;
+        font-family: "Fredoka", sans-serif;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+        transition:
+          transform 0.1s,
+          background 0.2s;
+        pointer-events: auto;
+        touch-action: manipulation;
+        margin: 10px;
+        min-width: 200px;
+        min-height: 56px;
+        z-index: 30;
+        position: relative;
+      }
+
+      .start-btn-wrap {
+        position: relative;
+        z-index: 5;
+        margin: 10px 0;
+      }
+      .start-btn-wrap .btn {
+        width: 100%;
+        min-width: 220px;
+      }
+      #start-btn {
+        display: block;
+        box-sizing: border-box;
+        width: 100%;
+        line-height: 1.2;
+      }
+
+      .btn:hover {
+        transform: scale(1.05);
+        background: #c0392b;
+      }
+      .btn:active {
+        transform: scale(0.95);
+      }
+      .btn-secondary {
+        background: #34495e;
+      }
+      .btn-secondary:hover {
+        background: #2c3e50;
+      }
+
+      .controls-hint {
+        margin-top: 30px;
+        font-size: 16px;
+        color: #555;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 15px 25px;
+        border-radius: 20px;
+        text-align: center;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .hidden {
+        display: none !important;
+        opacity: 0;
+        pointer-events: none !important;
+      }
+
+      /* In-game confirm dialog */
+      .confirm-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(6px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: auto;
+        z-index: 25;
+      }
+      .confirm-dialog {
+        background: rgba(255, 255, 255, 0.95);
+        border-radius: 24px;
+        padding: 28px 36px;
+        max-width: 380px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        text-align: center;
+      }
+      .confirm-dialog .confirm-message {
+        font-size: 20px;
+        color: #2c3e50;
+        margin-bottom: 24px;
+        line-height: 1.4;
+      }
+      .confirm-dialog .confirm-actions {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="ui-layer">
+      <div class="hud-top">
+        <div class="stats-left">
+          <div class="hp-container">
+            <div id="hp-bar"></div>
+            <div id="hp-text">100%</div>
+          </div>
+          <div class="lives-container"><span id="lives-val">❤️❤️❤️</span></div>
+          <div id="pause-btn">||</div>
+        </div>
+        <div class="stats-right">
+          <div id="score-display">Dist: <span id="score-val">0</span>m</div>
+          <div id="speed-display">
+            Speed: <span id="speed-val">0</span> km/h
+          </div>
+        </div>
+      </div>
+      <div id="notification-area"></div>
+    </div>
+
+    <!-- Main Menu -->
+    <div id="menu-overlay" class="overlay-menu">
+      <h1>Summit<br />Shredder 3D</h1>
+      <p class="subtitle">Jump, Dodge, and Survive the Slope!</p>
+      <div class="start-btn-wrap">
+        <button class="btn" id="start-btn" type="button">Hit the Slopes</button>
+      </div>
+      <div class="controls-hint">
+        <b>Arrow Keys</b>: Steer<br />
+        <b>Up + Arrow</b>: Fast Turn<br />
+        <b>Down + Arrow</b>: Smooth brake to 1<br />
+        <b>Space</b>: Jump<br />
+        <span style="font-size: 0.9em; color: #e67e22"
+          >Jump on Boxes for Prizes!</span
+        >
+      </div>
+    </div>
+
+    <!-- Pause Menu -->
+    <div id="pause-menu" class="overlay-menu hidden">
+      <h2>Paused</h2>
+      <button class="btn" id="resume-btn">Resume</button>
+      <button class="btn btn-secondary" id="exit-btn">Exit to Menu</button>
+    </div>
+
+    <!-- Exit confirm (in-game UI) -->
+    <div id="exit-confirm" class="confirm-overlay hidden">
+      <div class="confirm-dialog">
+        <p class="confirm-message">Exit to menu? Your current progress will be lost.</p>
+        <div class="confirm-actions">
+          <button class="btn btn-secondary" id="exit-confirm-cancel">Cancel</button>
+          <button class="btn" id="exit-confirm-yes">Exit</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // GAME CONFIGURATION
+      const CONFIG = {
+        colors: {
+          sky: 0x87ceeb,
+          snow: 0xffffff,
+          tree: 0x2d3436,
+          rock: 0x808080,
+          jacket: 0xd4a017,
+          pants: 0x1a1a1a,
+          helmet: 0xffffff,
+          goggles: 0x111111,
+          backpack: 0x333333,
+          box: 0xf1c40f,
+          elevatedBox: 0xffd700,
+          boost: 0x2ecc71,
+          shield: 0x00ffff,
+          ramp: 0x95a5a6,
+        },
+        physics: {
+          maxSpeed: 0.85, // Slightly lower for easier control
+          boostSpeed: 1.3,
+          acceleration: 0.0045, // Faster, cooler feel while staying smooth
+          friction: 0.98,
+          carveFriction: 0.997, // With Up: preserve speed during aggressive turns (gradual speed decrease)
+          carveMaxSpeedFrac: 0.6, // Carve capped at 60% of maxSpeed (ceiling for Up+steer)
+          carveAccelScale: 0.25, // Acceleration multiplier when carving (maintains speed)
+          carveTurnInterpolation: 0.25, // Turn interpolation speed when carving (faster control)
+          steerNoUpFriction: 0.998, // Without Up: gentler decay, smoother feel
+          steerNoUpMinSpeed: 0.35, // Without Up: keep a bit more speed (easier)
+          steerOnlyMaxSpeedFrac: 0.75, // Steering only (left/right) capped at 75% of maxSpeed
+          steerDownFriction: 0.97, // With Down + steer: faster brake per frame
+          steerDownMinSpeed: 0.01, // With Down + steer: decrease smoothly to this (1 km/h)
+          steerDownLeanBack: 0.55, // Down only: lean back (rad); Down+steer = no lean (Y only)
+          steerDownExtraTurnRad: Math.PI / 4, // Down+steer: turn 45° more than limit (rad)
+          steerDownOnlyAccel: 0.002, // When only Down: slow, smooth speed increase per frame
+          steerNoUpTurnScale: 0.5, // Without Up: gentler turn angle, no big curve
+          accelNoUpScale: 0.55, // Without Up: smooth speed buildup; with Up uses full accel
+          straightLineFriction: 0.997, // Going straight: very gentle decay (smooth coast)
+          gravity: 0.02,
+          jumpForce: 0.42, // High jump (one per Space press)
+          rampForce: 0.4, // Lower so elevated box needs a timed jump (Space) to reach
+          rampAssistWindow: 50, // Frames after ramp to tap Space for smooth assisted jump (~0.8s)
+          rampAssistBoost: 0.32, // Extra upward boost when tapping Space in air after ramp
+          spinOutThreshold: 120, // 2 seconds at 60fps
+        },
+        game: {
+          maxHP: 100,
+          maxLives: 3,
+          invincibleTime: 600,
+          dynamiteTime: 300,
+          baseSpawnRate: 0.2,
+        },
+        world: {
+          playAreaWidth: 72, // ±36 units wide - feels open but bounded
+          obstacleZoneMargin: 8, // When |x| > halfWidth - this, extra friction (stay in obstacle zone)
+        },
+      };
+
+      // THREE.JS VARIABLES
+      let scene, camera, renderer;
+      let playerGroup, playerMeshContainer, shieldMesh, dynamiteMesh;
+      let ground;
+      let obstacles = [];
+      let particles = [];
+      let effects = []; // Ring effects etc
+      let cameraShake = { x: 0, y: 0, intensity: 0 };
+
+      // GAME STATE
+      let gameState = "MENU";
+      let score = 0;
+      let speed = 0;
+      let playerVelocity = { x: 0, y: 0, z: 0 };
+      let playerAngle = 0;
+      let turnDuration = 0; // Frames key is held
+      let lastSteerDir = 0; // -1 right, 1 left, 0 none (detect flip to avoid brake when straightening)
+      let isSpinningOut = false;
+      let spinOutTimer = 0;
+
+      let playerStats = {
+        hp: 100,
+        lives: 3,
+        isJumping: false,
+        didJumpThisAirtime: false, // true only if player pressed Space this air time (required for elevated box)
+        rampLaunchFramesAgo: null, // frames since ramp launch (null when not from ramp)
+        canRampAssistJump: false, // one-time Space tap in air after ramp gives assisted boost
+        invincibleTimer: 0,
+        dynamiteTimer: 0,
+        dynamiteJumpCount: 0,
+        hasDynamite: false,
+      };
+      let frameId;
+      let initRetries = 0;
+
+      // INPUT
+      const input = { left: false, right: false, up: false, down: false, jump: false };
+
+      // DOM ELEMENTS
+      const startBtn = document.getElementById("start-btn");
+      const menuOverlay = document.getElementById("menu-overlay");
+      const pauseMenu = document.getElementById("pause-menu");
+      const pauseBtn = document.getElementById("pause-btn");
+      const resumeBtn = document.getElementById("resume-btn");
+      const exitBtn = document.getElementById("exit-btn");
+      const exitConfirmOverlay = document.getElementById("exit-confirm");
+      const exitConfirmCancel = document.getElementById("exit-confirm-cancel");
+      const exitConfirmYes = document.getElementById("exit-confirm-yes");
+      const scoreVal = document.getElementById("score-val");
+      const speedVal = document.getElementById("speed-val");
+      const hpBar = document.getElementById("hp-bar");
+      const hpText = document.getElementById("hp-text");
+      const livesVal = document.getElementById("lives-val");
+      const notificationArea = document.getElementById("notification-area");
+      const titleText = document.querySelector("h1");
+      const subText = document.querySelector(".subtitle");
+
+      // --- INITIALIZATION ---
+      function init() {
+        if (typeof THREE === "undefined") {
+          if (initRetries < 20) {
+            initRetries++;
+            setTimeout(init, 200);
+          } else {
+            console.error("Three.js failed to load.");
+            subText.innerText = "Error Loading Game Assets";
+          }
+          return;
+        }
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(CONFIG.colors.sky);
+        scene.fog = new THREE.Fog(CONFIG.colors.sky, 20, 120);
+
+        camera = new THREE.PerspectiveCamera(
+          60,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          200,
+        );
+        camera.position.set(0, 6, 12);
+        camera.lookAt(0, 0, 0);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.domElement.style.position = "absolute";
+        renderer.domElement.style.top = "0";
+        renderer.domElement.style.left = "0";
+        renderer.domElement.style.zIndex = "1";
+        renderer.domElement.style.pointerEvents = "none"; // allow menu/pause to receive clicks until game starts
+        document.body.appendChild(renderer.domElement);
+        document.body.appendChild(exitConfirmOverlay);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(10, 20, 10);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 50;
+        dirLight.shadow.camera.left = -20;
+        dirLight.shadow.camera.right = 20;
+        dirLight.shadow.camera.top = 20;
+        dirLight.shadow.camera.bottom = -20;
+        scene.add(dirLight);
+
+        const planeGeometry = new THREE.PlaneGeometry(200, 200);
+        const planeMaterial = new THREE.MeshLambertMaterial({
+          color: CONFIG.colors.snow,
+        });
+        ground = new THREE.Mesh(planeGeometry, planeMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        createPlayer();
+
+        window.addEventListener("resize", onWindowResize, false);
+        document.addEventListener("keydown", onKeyDown);
+        document.addEventListener("keyup", onKeyUp);
+        document.addEventListener("touchstart", onTouchStart, {
+          passive: false,
+        });
+        document.addEventListener("touchend", onTouchEnd);
+
+        animate();
+        console.log("Game Initialized");
+      }
+
+      function createPlayer() {
+        if (!scene) return;
+        playerGroup = new THREE.Group();
+        playerMeshContainer = new THREE.Group();
+        playerGroup.add(playerMeshContainer);
+
+        // 1. Snowboard
+        const boardGeo = new THREE.BoxGeometry(0.6, 0.1, 2.2);
+        const boardMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
+        const board = new THREE.Mesh(boardGeo, boardMat);
+        board.position.y = 0.05;
+        board.castShadow = true;
+        board.receiveShadow = true;
+        playerMeshContainer.add(board);
+
+        // 2. Legs
+        const legGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.8, 8);
+        const legMat = new THREE.MeshLambertMaterial({
+          color: CONFIG.colors.pants,
+        });
+        const leftLeg = new THREE.Mesh(legGeo, legMat);
+        leftLeg.position.set(-0.2, 0.5, 0.3);
+        leftLeg.rotation.x = -0.2;
+        playerMeshContainer.add(leftLeg);
+        const rightLeg = new THREE.Mesh(legGeo, legMat);
+        rightLeg.position.set(0.2, 0.5, -0.3);
+        rightLeg.rotation.x = 0.2;
+        playerMeshContainer.add(rightLeg);
+
+        // 3. Torso
+        const torsoGeo = new THREE.BoxGeometry(0.7, 0.9, 0.5);
+        const torsoMat = new THREE.MeshLambertMaterial({
+          color: CONFIG.colors.jacket,
+        });
+        const torso = new THREE.Mesh(torsoGeo, torsoMat);
+        torso.position.set(0, 1.1, 0);
+        torso.castShadow = true;
+        playerMeshContainer.add(torso);
+
+        // 4. Backpack
+        const bagGeo = new THREE.BoxGeometry(0.5, 0.6, 0.3);
+        const bagMat = new THREE.MeshLambertMaterial({
+          color: CONFIG.colors.backpack,
+        });
+        const bag = new THREE.Mesh(bagGeo, bagMat);
+        bag.position.set(0, 1.2, 0.35);
+        playerMeshContainer.add(bag);
+
+        // 5. Head
+        const headGeo = new THREE.SphereGeometry(0.25, 16, 16);
+        const headMat = new THREE.MeshLambertMaterial({
+          color: CONFIG.colors.helmet,
+        });
+        const head = new THREE.Mesh(headGeo, headMat);
+        head.position.set(0, 1.7, 0);
+        playerMeshContainer.add(head);
+
+        // 6. Goggles
+        const goggleGeo = new THREE.BoxGeometry(0.35, 0.15, 0.1);
+        const goggleMat = new THREE.MeshPhongMaterial({
+          color: CONFIG.colors.goggles,
+          shininess: 100,
+        });
+        const goggles = new THREE.Mesh(goggleGeo, goggleMat);
+        goggles.position.set(0, 1.7, -0.22);
+        playerMeshContainer.add(goggles);
+
+        // 7. Arms
+        const armGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.7);
+        const leftArm = new THREE.Mesh(armGeo, torsoMat);
+        leftArm.position.set(-0.45, 1.2, 0);
+        leftArm.rotation.z = 0.5;
+        playerMeshContainer.add(leftArm);
+        const rightArm = new THREE.Mesh(armGeo, torsoMat);
+        rightArm.position.set(0.45, 1.2, 0);
+        rightArm.rotation.z = -0.5;
+        playerMeshContainer.add(rightArm);
+
+        // Shield
+        const shieldGeo = new THREE.SphereGeometry(1.5, 16, 16);
+        const shieldMat = new THREE.MeshBasicMaterial({
+          color: CONFIG.colors.shield,
+          transparent: true,
+          opacity: 0.3,
+          wireframe: true,
+        });
+        shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
+        shieldMesh.visible = false;
+        playerMeshContainer.add(shieldMesh);
+
+        // Dynamite
+        const dynGroup = new THREE.Group();
+        const dynStick = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.1, 0.1, 0.6),
+          new THREE.MeshLambertMaterial({ color: 0xff0000 }),
+        );
+        dynStick.rotation.z = Math.PI / 2;
+        dynGroup.add(dynStick);
+        const chain = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.02, 0.02, 1),
+          new THREE.MeshBasicMaterial({ color: 0x555555 }),
+        );
+        chain.position.y = 0.5;
+        dynGroup.add(chain);
+        dynamiteMesh = dynGroup;
+        dynamiteMesh.position.set(0, 1, 1.5);
+        dynamiteMesh.visible = false;
+        playerMeshContainer.add(dynamiteMesh);
+
+        scene.add(playerGroup);
+      }
+
+      function spawnObstacle(zPos, xPosOverride, typeOverride) {
+        const rand = Math.random();
+        let type = typeOverride;
+
+        if (type === undefined) {
+          if (rand > 0.95) type = "ramp_combo";
+          else if (rand > 0.78) type = "box";
+          else if (rand > 0.72) type = "boost";
+          else if (rand > 0.42) type = "rock";
+          else type = "tree";
+        }
+
+        let mesh;
+        const half = CONFIG.world.playAreaWidth / 2;
+        const xPos =
+          xPosOverride !== undefined
+            ? xPosOverride
+            : (Math.random() - 0.5) * CONFIG.world.playAreaWidth;
+
+        if (type === "ramp_combo") {
+          // 1. Spawn Ramp: slope rises toward -Z (jump direction toward elevated box)
+          const ramp = new THREE.Mesh(
+            new THREE.BoxGeometry(2, 0.5, 4),
+            new THREE.MeshLambertMaterial({ color: CONFIG.colors.ramp }),
+          );
+          // Incline so high end is at -Z (ahead). rotation.y=PI makes box -Z face world -Z.
+          ramp.rotation.y = Math.PI;
+          ramp.rotation.x = Math.PI / 8;
+          ramp.position.y = 0.5;
+          ramp.castShadow = true;
+          ramp.userData = { radius: 1.5, type: "ramp", height: 0.5 };
+          ramp.position.set(xPos, 0.5, zPos);
+          scene.add(ramp);
+          obstacles.push(ramp);
+
+          // 2. Spawn Elevated Box: further ahead and higher so a timed jump at ramp exit is required
+          const box = new THREE.Mesh(
+            new THREE.BoxGeometry(1.5, 1.5, 1.5),
+            new THREE.MeshPhongMaterial({
+              color: CONFIG.colors.elevatedBox,
+              shininess: 100,
+            }),
+          );
+          box.position.set(xPos, 6.5, zPos - 24); // High and far: ramp-only trajectory passes below
+          box.castShadow = true;
+          box.userData = {
+            radius: 2.0,
+            type: "box",
+            isElevated: true,
+            height: 7.25,
+            breakHeight: 6.0, // Must be above this (timed jump) to break; else pass under
+          };
+          scene.add(box);
+          obstacles.push(box);
+          return; // Done
+        }
+
+        if (type === "tree") {
+          const treeGroup = new THREE.Group();
+          const trunk = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.2, 0.3, 1, 6),
+            new THREE.MeshLambertMaterial({ color: 0x5d4037 }),
+          );
+          trunk.position.y = 0.5;
+          trunk.castShadow = true;
+          treeGroup.add(trunk);
+          const leafMat = new THREE.MeshLambertMaterial({
+            color: CONFIG.colors.tree,
+          });
+          const b1 = new THREE.Mesh(new THREE.ConeGeometry(1.5, 2, 6), leafMat);
+          b1.position.y = 1.5;
+          b1.castShadow = true;
+          treeGroup.add(b1);
+          const b2 = new THREE.Mesh(
+            new THREE.ConeGeometry(1.2, 1.5, 6),
+            leafMat,
+          );
+          b2.position.y = 2.5;
+          b2.castShadow = true;
+          treeGroup.add(b2);
+          mesh = treeGroup;
+          mesh.userData = { radius: 0.8, type: "tree", height: 3 };
+        } else if (type === "rock") {
+          mesh = new THREE.Mesh(
+            new THREE.DodecahedronGeometry(Math.random() * 0.5 + 0.3),
+            new THREE.MeshLambertMaterial({ color: CONFIG.colors.rock }),
+          );
+          mesh.position.y = 0.4;
+          mesh.castShadow = true;
+          mesh.userData = { radius: 0.6, type: "rock", height: 1 };
+        } else if (type === "boost") {
+          mesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(2, 6),
+            new THREE.MeshBasicMaterial({ color: CONFIG.colors.boost }),
+          );
+          mesh.rotation.x = -Math.PI / 2;
+          mesh.position.y = 0.05;
+          mesh.userData = { radius: 1.5, type: "boost", height: 0.1 };
+        } else if (type === "box") {
+          mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1.5, 1.5, 1.5),
+            new THREE.MeshPhongMaterial({
+              color: CONFIG.colors.box,
+              shininess: 100,
+            }),
+          );
+          mesh.position.y = 2;
+          mesh.castShadow = true;
+          mesh.userData = { radius: 1.2, type: "box", height: 2.5 }; // Increased radius slightly
+        }
+
+        mesh.position.x = xPos;
+        mesh.position.z = zPos;
+        scene.add(mesh);
+        obstacles.push(mesh);
+      }
+
+      // Spawn a full row across the width so every stretch has obstacles and boxes
+      function spawnChunk(zBase) {
+        const half = CONFIG.world.playAreaWidth / 2;
+        const slots = 5;
+        const step = CONFIG.world.playAreaWidth / (slots + 1);
+        const xSlots = [];
+        for (let i = 0; i < slots; i++) {
+          xSlots.push(-half + step * (i + 1) + (Math.random() - 0.5) * 8);
+        }
+        const boxSlot = Math.floor(Math.random() * slots);
+        const rampSlot =
+          Math.random() > 0.7 ? Math.floor(Math.random() * slots) : -1;
+        const boostSlot =
+          Math.random() < 0.25 ? Math.floor(Math.random() * slots) : -1;
+        for (let i = 0; i < slots; i++) {
+          let type = Math.random() > 0.5 ? "tree" : "rock";
+          if (i === boxSlot) type = "box";
+          else if (i === rampSlot) type = "ramp_combo";
+          else if (i === boostSlot) type = "boost";
+          const zOffset = (Math.random() - 0.5) * 6;
+          spawnObstacle(zBase + zOffset, xSlots[i], type);
+        }
+      }
+
+      function triggerNotification(text, color = "#f1c40f") {
+        notificationArea.innerText = text;
+        notificationArea.style.color = color;
+        notificationArea.style.opacity = 1;
+        setTimeout(() => {
+          notificationArea.style.opacity = 0;
+        }, 2000);
+      }
+
+      function shakeCamera() {
+        cameraShake.intensity = 0.5;
+      }
+
+      function createRingEffect(position, opts) {
+        opts = opts || {};
+        const inner = opts.inner != null ? opts.inner : 1;
+        const outer = opts.outer != null ? opts.outer : 1.5;
+        const color = opts.color != null ? opts.color : 0xffff00;
+        const geometry = new THREE.RingGeometry(inner, outer, 32);
+        const material = new THREE.MeshBasicMaterial({
+          color: color,
+          transparent: true,
+          opacity: 0.8,
+          side: THREE.DoubleSide,
+        });
+        const ring = new THREE.Mesh(geometry, material);
+        ring.position.copy(position);
+        ring.lookAt(camera.position); // Face camera
+        scene.add(ring);
+        effects.push({ mesh: ring, scale: 1, opacity: 0.8, type: "ring" });
+      }
+
+      function breakBox(boxMesh) {
+        scene.remove(boxMesh);
+        obstacles = obstacles.filter((o) => o !== boxMesh);
+        const isElevated = boxMesh.userData.isElevated;
+
+        // Visual Effect (elevated: same as regular but gold rings + more particles)
+        createRingEffect(boxMesh.position, isElevated ? { color: 0xffd700, inner: 1.2, outer: 1.8 } : {});
+        if (isElevated) createRingEffect(boxMesh.position, { color: 0xffd700, inner: 0.6, outer: 1.0 });
+        const particleCount = isElevated ? 18 : 10;
+        for (let i = 0; i < particleCount; i++) {
+          const v = new THREE.Vector3(
+            Math.random() - 0.5,
+            Math.random() * (isElevated ? 1.2 : 1),
+            Math.random() - 0.5,
+          );
+          createSnowParticle(
+            boxMesh.position,
+            v,
+            isElevated ? 0xffd700 : 0xffff00,
+          );
+        }
+
+        // Loot Table (Better odds if elevated)
+        const rand = Math.random();
+
+        // Elevated Box: 0-10% Dynamite, 10-30% Boost, 30-70% Life/Heal, 70-100% Shield
+        // Normal Box: 0-20% Dynamite, 20-40% Boost, 40-70% HP, 70-90% Life, 90-100% Shield
+
+        if (isElevated) {
+          if (rand < 0.1) {
+            // 10% Dynamite
+            if (!playerStats.hasDynamite) {
+              playerStats.hasDynamite = true;
+              playerStats.dynamiteTimer = CONFIG.game.dynamiteTime;
+              playerStats.dynamiteJumpCount = 0;
+              dynamiteMesh.visible = true;
+              triggerNotification("TRAP! JUMP x2!", "#e74c3c");
+            }
+          } else if (rand < 0.3) {
+            speed = CONFIG.physics.boostSpeed * 1.2;
+            triggerNotification("MEGA BOOST!");
+          } else if (rand < 0.7) {
+            if (playerStats.lives < CONFIG.game.maxLives) {
+              playerStats.lives++;
+              updateUI();
+              triggerNotification("EXTRA LIFE!", "#e67e22");
+            } else {
+              playerStats.hp = 100;
+              updateUI();
+              triggerNotification("FULL HEAL!", "#2ecc71");
+            }
+          } else {
+            playerStats.invincibleTimer = CONFIG.game.invincibleTime * 1.5;
+            shieldMesh.visible = true;
+            triggerNotification("SUPER SHIELD!", "#00ffff");
+          }
+        } else {
+          if (rand < 0.2) {
+            if (!playerStats.hasDynamite) {
+              playerStats.hasDynamite = true;
+              playerStats.dynamiteTimer = CONFIG.game.dynamiteTime;
+              playerStats.dynamiteJumpCount = 0;
+              dynamiteMesh.visible = true;
+              triggerNotification(
+                "DYNAMITE! Jump x2 Straight to Remove!",
+                "#e74c3c",
+              );
+            }
+          } else if (rand < 0.4) {
+            speed = CONFIG.physics.boostSpeed;
+            triggerNotification("SPEED BOOST!");
+          } else if (rand < 0.6) {
+            playerStats.hp = Math.min(playerStats.hp + 30, CONFIG.game.maxHP);
+            updateUI();
+            triggerNotification("+30 HP", "#2ecc71");
+          } else if (rand < 0.8) {
+            if (playerStats.lives < CONFIG.game.maxLives) {
+              playerStats.lives++;
+              updateUI();
+              triggerNotification("EXTRA LIFE!", "#e67e22");
+            } else {
+              playerStats.hp = 100;
+              updateUI();
+              triggerNotification("FULL HEAL!", "#2ecc71");
+            }
+          } else {
+            playerStats.invincibleTimer = CONFIG.game.invincibleTime;
+            shieldMesh.visible = true;
+            triggerNotification("SHIELD ACTIVE!", "#00ffff");
+          }
+        }
+      }
+
+      function takeDamage(amount) {
+        if (playerStats.invincibleTimer > 0) return;
+        playerStats.hp -= amount;
+        speed *= 0.5;
+        shakeCamera();
+        playerGroup.position.y += 0.2;
+        triggerNotification("OUCH!", "#e74c3c");
+        if (playerStats.hp <= 0) {
+          playerStats.lives--;
+          if (playerStats.lives <= 0) gameOver();
+          else {
+            playerStats.hp = 100;
+            playerStats.invincibleTimer = 120;
+            shieldMesh.visible = true;
+            triggerNotification("LIFE LOST!", "#ff0000");
+          }
+        }
+        updateUI();
+      }
+
+      function resetGameStateAndScene(fullReset = true) {
+        if (!playerGroup) {
+          if (scene) createPlayer();
+          if (!playerGroup) return;
+        }
+        score = 0;
+        speed = 0;
+        playerAngle = 0;
+        playerVelocity.x = 0;
+        playerVelocity.y = 0;
+        playerVelocity.z = 0;
+        playerGroup.position.set(0, 0, 0);
+        playerGroup.rotation.set(0, 0, 0);
+        isSpinningOut = false;
+        spinOutTimer = 0;
+        turnDuration = 0;
+        lastSteerDir = 0;
+        if (fullReset) {
+          playerStats.hp = 100;
+          playerStats.lives = 3;
+        }
+        playerStats.hasDynamite = false;
+        playerStats.didJumpThisAirtime = false;
+        playerStats.rampLaunchFramesAgo = null;
+        playerStats.canRampAssistJump = false;
+        dynamiteMesh.visible = false;
+        playerStats.invincibleTimer = 0;
+        shieldMesh.visible = false;
+        obstacles.forEach((o) => scene.remove(o));
+        obstacles.length = 0;
+        for (let i = 1; i < 25; i++) spawnChunk(-i * 10);
+        if (playerMeshContainer && playerMeshContainer.userData) playerMeshContainer.userData.leanBack = 0;
+        updateUI();
+      }
+
+      function resetGame(fullReset = true) {
+        if (!scene || !playerGroup) return;
+        resetGameStateAndScene(fullReset);
+        gameState = "PLAYING";
+        window.focus();
+        menuOverlay.classList.add("hidden");
+        pauseMenu.classList.add("hidden");
+        if (renderer && renderer.domElement) renderer.domElement.style.pointerEvents = "auto";
+      }
+
+      function updateUI() {
+        hpBar.style.width = playerStats.hp + "%";
+        hpText.innerText = playerStats.hp + "%";
+        livesVal.innerText = "❤️".repeat(Math.max(0, playerStats.lives));
+      }
+
+      function createSnowParticle(position, velocity, color = 0xffffff) {
+        const geo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+        const mat = new THREE.MeshBasicMaterial({ color: color });
+        const p = new THREE.Mesh(geo, mat);
+        p.position.copy(position);
+        scene.add(p);
+        particles.push({ mesh: p, velocity: velocity, life: 1.0 });
+      }
+
+      function updatePhysics() {
+        if (gameState !== "PLAYING") return;
+
+        // --- SPIN OUT MECHANIC ---
+        if (isSpinningOut) {
+          spinOutTimer--;
+          playerAngle += 0.4;
+          speed *= 0.92;
+          if (spinOutTimer <= 0) {
+            isSpinningOut = false;
+            playerAngle = 0;
+            speed = 0.1;
+          }
+          playerVelocity.z = speed * -Math.cos(0);
+          playerGroup.position.z += playerVelocity.z;
+          playerMeshContainer.rotation.y = playerAngle;
+          if (cameraShake.intensity > 0) cameraShake.intensity *= 0.9;
+          updateCamera();
+          return;
+        }
+
+        // --- MOVEMENT LOGIC (NEW FORMULA) ---
+        let isSteering = input.left || input.right;
+        const steerDir = input.left ? 1 : input.right ? -1 : 0;
+        if (steerDir !== lastSteerDir && lastSteerDir !== 0) {
+          turnDuration = 0; // Flipped left<->right: don't keep long-hold brake, no instant speed drop
+        }
+        lastSteerDir = steerDir;
+
+        if (isSteering) {
+          turnDuration++; // Count frames
+        } else {
+          turnDuration = 0;
+        }
+
+        // Normalize duration 0.0 to 1.0 (0s to 2s)
+        let turnRatio = Math.min(
+          turnDuration / CONFIG.physics.spinOutThreshold,
+          1.0,
+        );
+
+        // Turn Angle Calculation: With Up = full curve; without Up = gentler; Down+steer = +45° to limit
+        let angleMagnitude = 1.6 * Math.pow(turnRatio, 1.2);
+        if (angleMagnitude < 0.2) angleMagnitude = 0.2;
+        if (!input.up && isSteering) {
+          angleMagnitude *= CONFIG.physics.steerNoUpTurnScale != null ? CONFIG.physics.steerNoUpTurnScale : 0.5;
+        }
+        if (input.down && isSteering) {
+          const extra = CONFIG.physics.steerDownExtraTurnRad != null ? CONFIG.physics.steerDownExtraTurnRad : Math.PI / 4;
+          angleMagnitude += extra;
+        }
+
+        let targetAngle = 0;
+        if (input.left) targetAngle = angleMagnitude;
+        if (input.right) targetAngle = -angleMagnitude;
+
+        // Interpolate player angle (faster when carving for better control)
+        const interpolationSpeed = (isSteering && input.up)
+          ? (CONFIG.physics.carveTurnInterpolation != null ? CONFIG.physics.carveTurnInterpolation : 0.25)
+          : 0.15;
+        playerAngle += (targetAngle - playerAngle) * interpolationSpeed;
+
+        // Long hold (2s): brake toward min speed, but never full stop
+        let stopDrift = false;
+        if (turnRatio >= 1.0) {
+          stopDrift = true;
+          speed *= 0.98;
+        }
+
+        // --- SPEED & FRICTION ---
+        const facingDirZ = -Math.cos(playerAngle);
+        const facingDirX = -Math.sin(playerAngle);
+        
+        // Calculate acceleration based on control state (consistent throughout game)
+        let accel = 0;
+        if (isSteering && input.up) {
+          // Up+steer: apply minimal acceleration to maintain speed (still capped at 60%)
+          accel = CONFIG.physics.acceleration * (CONFIG.physics.carveAccelScale != null ? CONFIG.physics.carveAccelScale : 0.25);
+        } else if (isSteering && input.down) {
+          // Down+steer: no acceleration (braking)
+          accel = 0;
+        } else {
+          // Default, steering only, down only, or Up (not steering): apply acceleration with scale
+          accel = CONFIG.physics.acceleration;
+          accel *= (CONFIG.physics.accelNoUpScale != null ? CONFIG.physics.accelNoUpScale : 0.55);
+        }
+
+        if (speed > CONFIG.physics.maxSpeed) {
+          speed *= 0.99; // Decay boost
+        } else {
+          speed += accel;
+
+          // Friction: Up = carve (lose less); Down = smooth brake to 1; else gentle decay, floor 30%
+          if (isSteering) {
+            if (input.up) {
+              speed *= (CONFIG.physics.carveFriction != null ? CONFIG.physics.carveFriction : 0.985);
+              // Cap speed at 60% when carving (ceiling, not floor) - prevents speed increase
+              const carveMax = CONFIG.physics.maxSpeed * (CONFIG.physics.carveMaxSpeedFrac != null ? CONFIG.physics.carveMaxSpeedFrac : 0.6);
+              speed = Math.min(speed, carveMax);
+            } else if (input.down) {
+              const downFric = CONFIG.physics.steerDownFriction != null ? CONFIG.physics.steerDownFriction : 0.98;
+              const downMin = CONFIG.physics.steerDownMinSpeed != null ? CONFIG.physics.steerDownMinSpeed : 0.01;
+              speed *= downFric;
+              if (speed < downMin) speed = downMin;
+            } else {
+              speed *= (CONFIG.physics.steerNoUpFriction != null ? CONFIG.physics.steerNoUpFriction : 0.997);
+              // Cap speed at 75% when steering only (left/right without Up/Down)
+              const steerOnlyMax = CONFIG.physics.maxSpeed * (CONFIG.physics.steerOnlyMaxSpeedFrac != null ? CONFIG.physics.steerOnlyMaxSpeedFrac : 0.75);
+              speed = Math.min(speed, steerOnlyMax);
+            }
+          } else {
+            if (input.down) {
+              // Down only: same acceleration as default (already applied above)
+              // No additional friction - acceleration handles speed increase
+            } else {
+              const straightFric = CONFIG.physics.straightLineFriction != null ? CONFIG.physics.straightLineFriction : 0.997;
+              speed *= straightFric;
+            }
+          }
+
+          speed = Math.min(speed, CONFIG.physics.maxSpeed);
+          const minFrac = CONFIG.physics.steerNoUpMinSpeed != null ? CONFIG.physics.steerNoUpMinSpeed : 0.3;
+          const minSpeed = CONFIG.physics.maxSpeed * minFrac;
+          const downMin = CONFIG.physics.steerDownMinSpeed != null ? CONFIG.physics.steerDownMinSpeed : 0.01;
+          if (isSteering && !input.up && !input.down && speed < minSpeed) speed = minSpeed;
+        }
+
+        // --- OFF-SLOPE SLOWDOWN (promote staying in obstacle area) ---
+        const halfWidth = CONFIG.world.playAreaWidth / 2;
+        const margin = CONFIG.world.obstacleZoneMargin || 8;
+        if (Math.abs(playerGroup.position.x) > halfWidth - margin) {
+          speed *= 0.97;
+        }
+
+        // --- VELOCITY (drift forward + sideways from speed and facing) ---
+        const minFrac = CONFIG.physics.steerNoUpMinSpeed != null ? CONFIG.physics.steerNoUpMinSpeed : 0.3;
+        const minSpeedDrift = CONFIG.physics.maxSpeed * minFrac;
+        if (stopDrift && !input.down && speed < minSpeedDrift) speed = minSpeedDrift;
+        playerVelocity.z = speed * facingDirZ;
+        playerVelocity.x = speed * facingDirX;
+
+        playerGroup.position.x += playerVelocity.x;
+        playerGroup.position.z += playerVelocity.z;
+
+        if (playerGroup.position.x < -halfWidth)
+          playerGroup.position.x = -halfWidth;
+        if (playerGroup.position.x > halfWidth)
+          playerGroup.position.x = halfWidth;
+
+        // Visuals: Down only = lean back; Down+steer = Y-axis only (no lean), turn +45°
+        const leanBackTarget = (input.down && !isSteering) ? (CONFIG.physics.steerDownLeanBack != null ? CONFIG.physics.steerDownLeanBack : 0.55) : 0;
+        const leanBack = (playerMeshContainer.userData.leanBack != null ? playerMeshContainer.userData.leanBack : 0);
+        playerMeshContainer.userData.leanBack = leanBack + (leanBackTarget - leanBack) * 0.12;
+        playerMeshContainer.rotation.x = playerMeshContainer.userData.leanBack;
+        playerMeshContainer.rotation.y = playerAngle;
+        playerMeshContainer.rotation.z = -playerAngle * 0.3;
+
+        // --- DYNAMITE ---
+        if (playerStats.hasDynamite) {
+          if (isSteering) playerStats.dynamiteJumpCount = 0;
+          playerStats.dynamiteTimer--;
+          if (playerStats.dynamiteTimer <= 0) {
+            playerStats.hasDynamite = false;
+            dynamiteMesh.visible = false;
+            takeDamage(50);
+            triggerNotification("BOOM!", "#ff0000");
+            for (let i = 0; i < 30; i++) {
+              const v = new THREE.Vector3(
+                (Math.random() - 0.5) * 2,
+                Math.random() * 2,
+                (Math.random() - 0.5) * 2,
+              );
+              createSnowParticle(playerGroup.position, v, 0xff0000);
+            }
+          } else if (playerStats.dynamiteTimer % 60 === 0)
+            triggerNotification(
+              Math.ceil(playerStats.dynamiteTimer / 60) + "...",
+              "#ff0000",
+            );
+        }
+
+        // --- INVINCIBILITY ---
+        if (playerStats.invincibleTimer > 0) {
+          playerStats.invincibleTimer--;
+          shieldMesh.rotation.y += 0.1;
+          if (playerStats.invincibleTimer <= 0) shieldMesh.visible = false;
+        }
+
+        // --- JUMPING (one jump per press; holding Space = single high jump) ---
+        if (input.jump && !playerStats.isJumping) {
+          playerStats.isJumping = true;
+          playerStats.didJumpThisAirtime = true;
+          playerStats.rampLaunchFramesAgo = null;
+          playerStats.canRampAssistJump = false;
+          playerVelocity.y = CONFIG.physics.jumpForce;
+          input.jump = false; // Consume so holding Space does not repeat jump
+        }
+        // Ramp assist: tap Space once while in the air after a ramp for a smooth extra boost (reaches elevated box)
+        const assistWindow =
+          CONFIG.physics.rampAssistWindow != null
+            ? CONFIG.physics.rampAssistWindow
+            : 50;
+        const assistBoost =
+          CONFIG.physics.rampAssistBoost != null
+            ? CONFIG.physics.rampAssistBoost
+            : 0.32;
+        if (
+          input.jump &&
+          playerStats.isJumping &&
+          playerStats.canRampAssistJump &&
+          playerStats.rampLaunchFramesAgo != null &&
+          playerStats.rampLaunchFramesAgo < assistWindow
+        ) {
+          playerVelocity.y += assistBoost;
+          playerStats.didJumpThisAirtime = true;
+          playerStats.canRampAssistJump = false;
+          input.jump = false; // Consume so one assist per press
+        }
+        if (playerStats.isJumping) {
+          if (playerStats.rampLaunchFramesAgo != null)
+            playerStats.rampLaunchFramesAgo++;
+          playerGroup.position.y += playerVelocity.y;
+          playerVelocity.y -= CONFIG.physics.gravity;
+          if (playerGroup.position.y <= 0) {
+            playerGroup.position.y = 0;
+            playerStats.isJumping = false;
+            playerStats.didJumpThisAirtime = false;
+            playerStats.rampLaunchFramesAgo = null;
+            playerStats.canRampAssistJump = false;
+            playerVelocity.y = 0;
+            if (playerStats.hasDynamite && !isSteering) {
+              playerStats.dynamiteJumpCount++;
+              if (playerStats.dynamiteJumpCount >= 2) {
+                playerStats.hasDynamite = false;
+                dynamiteMesh.visible = false;
+                triggerNotification("DYNAMITE DEFUSED!", "#2ecc71");
+              }
+            }
+          }
+        }
+
+        // Particles
+        if (
+          !playerStats.isJumping &&
+          Math.abs(playerAngle) > 0.3 &&
+          speed > 0.2
+        ) {
+          const offset = new THREE.Vector3(0, 0, 1).applyAxisAngle(
+            new THREE.Vector3(0, 1, 0),
+            playerAngle,
+          );
+          const sprayPos = playerGroup.position.clone().add(offset);
+          const v = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.2,
+            Math.random() * 0.2,
+            (Math.random() - 0.5) * 0.2,
+          );
+          createSnowParticle(sprayPos, v);
+        }
+
+        score += Math.abs(playerVelocity.z);
+        scoreVal.innerText = Math.floor(score);
+        speedVal.innerText = Math.floor(speed * 100);
+
+        ground.position.z = playerGroup.position.z - 20;
+        ground.position.x = playerGroup.position.x;
+      }
+
+      function updateObstacles() {
+        const lastZ =
+          obstacles.length > 0
+            ? obstacles[obstacles.length - 1].position.z
+            : playerGroup.position.z;
+        if (lastZ > playerGroup.position.z - 90) {
+          spawnChunk(lastZ - 18 - Math.random() * 8);
+        }
+
+        for (let i = obstacles.length - 1; i >= 0; i--) {
+          const ob = obstacles[i];
+          if (ob.userData.type === "box") {
+            ob.rotation.x += 0.02;
+            ob.rotation.y += 0.03;
+          }
+
+          if (ob.position.z > playerGroup.position.z + 10) {
+            scene.remove(ob);
+            obstacles.splice(i, 1);
+          } else {
+            const dx = ob.position.x - playerGroup.position.x;
+            const dz = ob.position.z - playerGroup.position.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+
+            // Collision Logic
+            const hitRadius = ob.userData.radius + 0.3;
+            if (dist < hitRadius) {
+              if (ob.userData.type === "boost") {
+                speed = CONFIG.physics.boostSpeed;
+                triggerNotification("BOOST!");
+              } else if (ob.userData.type === "ramp") {
+                // Hit Ramp: low launch; tap Space anytime in the next ~0.8s for assisted jump to elevated box
+                playerStats.isJumping = true;
+                playerStats.didJumpThisAirtime = false;
+                playerStats.rampLaunchFramesAgo = 0;
+                playerStats.canRampAssistJump = true;
+                playerVelocity.y = CONFIG.physics.rampForce;
+                triggerNotification("Sweet! That's an AIR TIME!");
+              } else if (ob.userData.type === "box") {
+                const isElevated = ob.userData.isElevated;
+                const hitHeight = isElevated
+                  ? ob.userData.breakHeight != null
+                    ? ob.userData.breakHeight
+                    : 6.0
+                  : 2.0 - 1.5;
+
+                if (playerGroup.position.y > hitHeight) {
+                  if (isElevated && !playerStats.didJumpThisAirtime) {
+                    if (!ob.userData.missedNotificationShown) {
+                      ob.userData.missedNotificationShown = true;
+                      triggerNotification("Not this time...", "#95a5a6");
+                    }
+                  } else {
+                    breakBox(ob);
+                    playerVelocity.y = 0.2; // Bounce
+                  }
+                } else {
+                  if (isElevated) {
+                    if (!ob.userData.missedNotificationShown) {
+                      ob.userData.missedNotificationShown = true;
+                      triggerNotification("Not this time...", "#95a5a6");
+                    }
+                  } else {
+                    // Ground box missed (hit side): remove so it doesn't block
+                    scene.remove(ob);
+                    obstacles.splice(i, 1);
+                  }
+                }
+              } else {
+                // Hit Tree/Rock
+                if (playerGroup.position.y > ob.userData.height) {
+                  /* Jumped Over */
+                } else {
+                  scene.remove(ob);
+                  obstacles.splice(i, 1);
+                  takeDamage(20);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      function updateParticles() {
+        // Snow
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.life -= 0.05;
+          p.mesh.position.add(p.velocity);
+          p.mesh.scale.setScalar(p.life);
+          if (p.life <= 0) {
+            scene.remove(p.mesh);
+            particles.splice(i, 1);
+          }
+        }
+        // Effects
+        for (let i = effects.length - 1; i >= 0; i--) {
+          const e = effects[i];
+          e.scale += 0.2;
+          e.opacity -= 0.05;
+          e.mesh.scale.set(e.scale, e.scale, 1);
+          e.mesh.material.opacity = e.opacity;
+          if (e.opacity <= 0) {
+            scene.remove(e.mesh);
+            effects.splice(i, 1);
+          }
+        }
+      }
+
+      function updateCamera() {
+        const targetX = playerGroup.position.x;
+        const targetZ = playerGroup.position.z + 8;
+        let shakeX = 0,
+          shakeY = 0;
+        if (cameraShake.intensity > 0) {
+          shakeX = (Math.random() - 0.5) * cameraShake.intensity;
+          shakeY = (Math.random() - 0.5) * cameraShake.intensity;
+          cameraShake.intensity *= 0.9;
+          if (cameraShake.intensity < 0.01) cameraShake.intensity = 0;
+        }
+        camera.position.x += (targetX - camera.position.x) * 0.1 + shakeX;
+        camera.position.z = targetZ;
+        camera.position.y = playerGroup.position.y + 5 + shakeY;
+        camera.lookAt(
+          playerGroup.position.x,
+          playerGroup.position.y,
+          playerGroup.position.z - 5,
+        );
+      }
+
+      function togglePause() {
+        if (gameState === "PLAYING") {
+          gameState = "PAUSED";
+          pauseMenu.classList.remove("hidden");
+          pauseBtn.innerText = "▶";
+        } else if (gameState === "PAUSED") {
+          gameState = "PLAYING";
+          pauseMenu.classList.add("hidden");
+          pauseBtn.innerText = "||";
+          animate();
+        }
+      }
+
+      function gameOver() {
+        gameState = "GAMEOVER";
+        titleText.innerText = "GAME OVER";
+        subText.innerText = `Final Distance: ${Math.floor(score)}m`;
+        startBtn.innerText = "Try Again";
+        menuOverlay.classList.remove("hidden");
+        playerGroup.rotation.x = -Math.PI / 2;
+      }
+
+      function animate() {
+        frameId = requestAnimationFrame(animate);
+        if (!renderer || !scene || !camera) return;
+        if (gameState === "PAUSED") {
+          renderer.render(scene, camera);
+          return;
+        }
+        if (gameState === "PLAYING" || isSpinningOut) {
+          updatePhysics();
+          updateObstacles();
+          updateParticles();
+          updateCamera();
+        }
+        renderer.render(scene, camera);
+      }
+
+      // EVENTS
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+      function onKeyDown(e) {
+        if (e.key === "Enter" && gameState === "MENU") {
+          e.preventDefault();
+          startBtn.blur();
+          resetGame();
+          return;
+        }
+        if (e.key === "ArrowLeft") input.left = true;
+        if (e.key === "ArrowRight") input.right = true;
+        if (e.key === "ArrowUp") input.up = true;
+        if (e.key === "ArrowDown") input.down = true;
+        if (e.key === " ") input.jump = true;
+        if (e.key === "Escape") togglePause();
+      }
+      function onKeyUp(e) {
+        if (e.key === "ArrowLeft") input.left = false;
+        if (e.key === "ArrowRight") input.right = false;
+        if (e.key === "ArrowUp") input.up = false;
+        if (e.key === "ArrowDown") input.down = false;
+        if (e.key === " ") input.jump = false;
+      }
+      function onTouchStart(e) {
+        if (gameState !== "PLAYING") return;
+        for (let i = 0; i < e.touches.length; i++) {
+          const x = e.touches[i].clientX;
+          const w = window.innerWidth;
+          if (x < w * 0.3) input.left = true;
+          else if (x > w * 0.7) input.right = true;
+          else input.jump = true;
+        }
+      }
+      function onTouchEnd(e) {
+        input.left = false;
+        input.right = false;
+        input.jump = false;
+      }
+
+      // Blur buttons after click to prevent focus lingering
+      pauseBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        pauseBtn.blur();
+        togglePause();
+      });
+      resumeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        resumeBtn.blur();
+        togglePause();
+      });
+      exitBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        exitBtn.blur();
+        exitConfirmOverlay.classList.remove("hidden");
+      });
+      exitConfirmCancel.addEventListener("click", (e) => {
+        e.stopPropagation();
+        exitConfirmCancel.blur();
+        exitConfirmOverlay.classList.add("hidden");
+      });
+      exitConfirmYes.addEventListener("click", (e) => {
+        e.stopPropagation();
+        exitConfirmYes.blur();
+        exitConfirmOverlay.classList.add("hidden");
+        resetGameStateAndScene(true);
+        gameState = "MENU";
+        pauseMenu.classList.add("hidden");
+        menuOverlay.classList.remove("hidden");
+        pauseBtn.innerText = "||";
+        if (renderer && renderer.domElement) renderer.domElement.style.pointerEvents = "none";
+      });
+
+      startBtn.addEventListener("click", function(e) {
+        e.preventDefault();
+        startBtn.blur();
+        resetGame();
+      });
+
+      init();
+    </script>
+  </body>
+</html>
