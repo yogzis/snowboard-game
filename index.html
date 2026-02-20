@@ -340,6 +340,27 @@
         pointer-events: none !important;
       }
 
+      /* Dynamite countdown: full-screen red flash, slope stays visible */
+      #dynamite-flash.dynamite-flash-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 15;
+        background: rgba(255, 0, 0, 0);
+        opacity: 1;
+      }
+      #dynamite-flash.dynamite-flash-overlay.flash {
+        animation: dynamite-flash 0.35s ease-out forwards;
+      }
+      @keyframes dynamite-flash {
+        0% { background: rgba(255, 0, 0, 0); }
+        30% { background: rgba(255, 0, 0, 0.4); }
+        100% { background: rgba(255, 0, 0, 0); }
+      }
+
       /* In-game confirm dialog */
       .confirm-overlay {
         position: absolute;
@@ -439,6 +460,9 @@
       <button class="btn btn-secondary" id="exit-btn">Exit to Menu</button>
     </div>
 
+    <!-- Dynamite countdown red flash (semi-transparent, slope stays visible) -->
+    <div id="dynamite-flash" class="dynamite-flash-overlay" aria-hidden="true"></div>
+
     <!-- Exit confirm (in-game UI) -->
     <div id="exit-confirm" class="confirm-overlay hidden">
       <div class="confirm-dialog">
@@ -505,6 +529,7 @@
           maxLives: 3,
           invincibleTime: 600,
           dynamiteTime: 300,
+          dynamiteDamage: 85, // Post-explosion one obstacle hit = life lost
           boostDuration: 180, // Frames (e.g. 3 s at 60 fps)
           baseSpawnRate: 0.2,
         },
@@ -523,6 +548,7 @@
       let effects = []; // Ring effects etc
       let boostTrail = []; // Glowing skid marks while speed boost active
       let boostTrailSpawnCounter = 0;
+      let dynamiteSparks = []; // Sparks around dynamite when attached
       let cameraShake = { x: 0, y: 0, intensity: 0 };
 
       // GAME STATE
@@ -578,8 +604,19 @@
       const hpText = document.getElementById("hp-text");
       const livesVal = document.getElementById("lives-val");
       const notificationArea = document.getElementById("notification-area");
+      const dynamiteFlashEl = document.getElementById("dynamite-flash");
       const titleText = document.querySelector("h1");
       const subText = document.querySelector(".subtitle");
+
+      function triggerDynamiteFlash() {
+        if (!dynamiteFlashEl) return;
+        dynamiteFlashEl.classList.remove("flash");
+        dynamiteFlashEl.offsetHeight;
+        dynamiteFlashEl.classList.add("flash");
+        setTimeout(function () {
+          dynamiteFlashEl.classList.remove("flash");
+        }, 350);
+      }
 
       // --- INITIALIZATION ---
       function init() {
@@ -748,7 +785,7 @@
         shieldMesh.visible = false;
         playerMeshContainer.add(shieldMesh);
 
-        // Dynamite
+        // Dynamite (enlarged for visibility)
         const dynGroup = new THREE.Group();
         const dynStick = new THREE.Mesh(
           new THREE.CylinderGeometry(0.1, 0.1, 0.6),
@@ -763,7 +800,8 @@
         chain.position.y = 0.5;
         dynGroup.add(chain);
         dynamiteMesh = dynGroup;
-        dynamiteMesh.position.set(0, 1, 1.5);
+        dynamiteMesh.scale.set(1.5, 1.5, 1.5);
+        dynamiteMesh.position.set(0, 1, 1.6);
         dynamiteMesh.visible = false;
         playerMeshContainer.add(dynamiteMesh);
 
@@ -1028,6 +1066,7 @@
               playerStats.dynamiteJumpCount = 0;
               dynamiteMesh.visible = true;
               triggerNotification("TRAP! JUMP x2!", "#e74c3c");
+              setTimeout(triggerDynamiteFlash, 50);
             }
           } else if (rand < 0.3) {
             playerStats.boostTimer = CONFIG.game.boostDuration;
@@ -1059,6 +1098,7 @@
                 "DYNAMITE! Jump x2 Straight to Remove!",
                 "#e74c3c",
               );
+              setTimeout(triggerDynamiteFlash, 50);
             }
           } else if (rand < 0.4) {
             playerStats.boostTimer = CONFIG.game.boostDuration;
@@ -1134,6 +1174,8 @@
         playerStats.boostTimer = 0;
         playerStats.boostTargetSpeed = 0;
         dynamiteMesh.visible = false;
+        dynamiteSparks.forEach((s) => scene.remove(s.mesh));
+        dynamiteSparks.length = 0;
         playerStats.invincibleTimer = 0;
         shieldMesh.visible = false;
         boostTrail.forEach((m) => scene.remove(m.mesh));
@@ -1190,6 +1232,29 @@
         const entry = { mesh, life: 1.0, position: position.clone() };
         boostTrail.push(entry);
         return entry;
+      }
+
+      function createDynamiteSpark(worldPosition) {
+        const colors = [0xff6600, 0xff3300, 0xffaa00];
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        const geo = new THREE.SphereGeometry(0.05, 6, 6);
+        const mat = new THREE.MeshBasicMaterial({
+          color: color,
+          transparent: true,
+          opacity: 1,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.copy(worldPosition);
+        mesh.position.x += (Math.random() - 0.5) * 0.2;
+        mesh.position.y += (Math.random() - 0.5) * 0.2;
+        mesh.position.z += (Math.random() - 0.5) * 0.2;
+        scene.add(mesh);
+        const velocity = new THREE.Vector3(
+          (Math.random() - 0.5) * 0.15,
+          Math.random() * 0.12 + 0.05,
+          (Math.random() - 0.5) * 0.15,
+        );
+        dynamiteSparks.push({ mesh, velocity, life: 1.0 });
       }
 
       function updatePhysics() {
@@ -1422,7 +1487,10 @@
           if (playerStats.dynamiteTimer <= 0) {
             playerStats.hasDynamite = false;
             dynamiteMesh.visible = false;
-            takeDamage(50);
+            dynamiteSparks.forEach((s) => scene.remove(s.mesh));
+            dynamiteSparks.length = 0;
+            triggerDynamiteFlash();
+            takeDamage(CONFIG.game.dynamiteDamage != null ? CONFIG.game.dynamiteDamage : 85);
             triggerNotification("BOOM!", "#ff0000");
             for (let i = 0; i < 30; i++) {
               const v = new THREE.Vector3(
@@ -1432,11 +1500,18 @@
               );
               createSnowParticle(playerGroup.position, v, 0xff0000);
             }
-          } else if (playerStats.dynamiteTimer % 60 === 0)
-            triggerNotification(
-              Math.ceil(playerStats.dynamiteTimer / 60) + "...",
-              "#ff0000",
-            );
+          } else {
+            const dynWorld = new THREE.Vector3();
+            dynamiteMesh.getWorldPosition(dynWorld);
+            createDynamiteSpark(dynWorld);
+            if (Math.random() < 0.5) createDynamiteSpark(dynWorld);
+            if (playerStats.dynamiteTimer % 60 === 59) triggerDynamiteFlash();
+            if (playerStats.dynamiteTimer % 60 === 0)
+              triggerNotification(
+                Math.ceil(playerStats.dynamiteTimer / 60) + "...",
+                "#ff0000",
+              );
+          }
         }
 
         // --- INVINCIBILITY ---
@@ -1506,6 +1581,8 @@
               if (playerStats.dynamiteJumpCount >= 2) {
                 playerStats.hasDynamite = false;
                 dynamiteMesh.visible = false;
+                dynamiteSparks.forEach((s) => scene.remove(s.mesh));
+                dynamiteSparks.length = 0;
                 triggerNotification("DYNAMITE DEFUSED!", "#2ecc71");
               }
             }
@@ -1673,6 +1750,17 @@
           if (mark.life <= 0) {
             scene.remove(mark.mesh);
             boostTrail.splice(i, 1);
+          }
+        }
+        // Dynamite sparks
+        for (let i = dynamiteSparks.length - 1; i >= 0; i--) {
+          const s = dynamiteSparks[i];
+          s.life -= 0.08;
+          s.mesh.position.add(s.velocity);
+          s.mesh.material.opacity = s.life;
+          if (s.life <= 0) {
+            scene.remove(s.mesh);
+            dynamiteSparks.splice(i, 1);
           }
         }
       }
