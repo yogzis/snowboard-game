@@ -164,6 +164,85 @@
         z-index: 20;
       }
 
+      /* Hints overlay: above pause menu */
+      #hints-overlay {
+        z-index: 21;
+        justify-content: flex-start;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      #hints-overlay h2 {
+        margin-bottom: 16px;
+        flex-shrink: 0;
+      }
+      .hints-content {
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        border-radius: 12px;
+        padding: 20px 24px;
+        max-height: 65vh;
+        overflow-y: auto;
+        width: 100%;
+        max-width: 520px;
+        margin-bottom: 20px;
+        flex-shrink: 1;
+        min-height: 0;
+      }
+      .hints-content .hints-section {
+        margin-bottom: 20px;
+      }
+      .hints-content .hints-section:last-child {
+        margin-bottom: 0;
+      }
+      .hints-content .hints-section h3 {
+        font-size: 18px;
+        color: #7ec8e3;
+        margin: 0 0 8px 0;
+        text-shadow: none;
+      }
+      .hints-content .hints-section p {
+        font-size: 14px;
+        line-height: 1.45;
+        margin: 0;
+        color: rgba(255, 255, 255, 0.95);
+      }
+      .hints-content .hints-section ul {
+        font-size: 14px;
+        line-height: 1.45;
+        margin: 0 0 0 18px;
+        padding: 0 0 0 4px;
+        color: rgba(255, 255, 255, 0.95);
+      }
+      .hints-content .hints-section ul li {
+        margin-bottom: 6px;
+      }
+      .hints-content .hints-section ul li:last-child {
+        margin-bottom: 0;
+      }
+      .hints-content .hints-controls {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin: 0;
+      }
+      .hints-content .hints-controls .key-icon,
+      .hints-content .hints-controls .control-desc {
+        color: #fff;
+      }
+      .hints-content .hints-controls .control-divider {
+        color: rgba(255, 255, 255, 0.7);
+      }
+      .hints-content .hints-controls td {
+        padding: 4px 0;
+      }
+      .hints-actions {
+        display: flex;
+        gap: 12px;
+        flex-shrink: 0;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
       /* Main menu: background image, no header bar */
       #menu-overlay.overlay-menu {
         background-image: url("assets/home-page-bg-image.png");
@@ -457,7 +536,61 @@
     <div id="pause-menu" class="overlay-menu hidden">
       <h2>Paused</h2>
       <button class="btn" id="resume-btn">Resume</button>
+      <button class="btn btn-secondary" id="hints-btn">Hints</button>
       <button class="btn btn-secondary" id="exit-btn">Exit to Menu</button>
+    </div>
+
+    <!-- Hints overlay (How to Play) -->
+    <div id="hints-overlay" class="overlay-menu hidden" aria-label="How to Play">
+      <h2>How to Play</h2>
+      <div id="hints-content" class="hints-content">
+        <section class="hints-section">
+          <h3>Controls</h3>
+          <div class="controls-hint hints-controls">
+            <table>
+              <tr><td class="key-icon">⬅️ ➡️</td><td class="control-divider">|</td><td class="control-desc">Steer (curve intensity increases with hold)</td></tr>
+              <tr><td class="key-icon">⬆️</td><td class="control-divider">|</td><td class="control-desc">Lean forward + steer = controlled turn</td></tr>
+              <tr><td class="key-icon">⬇️</td><td class="control-divider">|</td><td class="control-desc">Lean back = speed up; with steer = brake</td></tr>
+              <tr><td class="key-icon">␣ Space</td><td class="control-divider">|</td><td class="control-desc">Jump (one jump per press)</td></tr>
+              <tr><td class="key-icon">Esc</td><td class="control-divider">|</td><td class="control-desc">Pause / Resume</td></tr>
+            </table>
+          </div>
+        </section>
+        <section class="hints-section">
+          <h3>Speed &amp; control</h3>
+          <ul>
+            <li>Up + steer caps speed at 60% for precise control.</li>
+            <li>Down + steer brakes smoothly to 1 km/h.</li>
+            <li>Down alone increases speed.</li>
+            <li>Steering only (no Up/Down) caps at 75% with a slide feel.</li>
+            <li>Hold a turn too long (~2 s) and you spin out.</li>
+          </ul>
+        </section>
+        <section class="hints-section">
+          <h3>Jumping</h3>
+          <p>One jump per Space press. Ramps launch you into the air; tap Space again in the air after a ramp for an extra boost to reach elevated boxes.</p>
+        </section>
+        <section class="hints-section">
+          <h3>Obstacles</h3>
+          <p>Trees and rocks: 20 damage and 50% speed loss on hit. Ramps: hit them to get launched for air time.</p>
+        </section>
+        <section class="hints-section">
+          <h3>Mystery boxes</h3>
+          <p>Jump on boxes for rewards. Standard boxes are floating; elevated boxes (often after ramps) need a ramp launch plus a Space tap in the air to reach. Hitting a box from the side removes it without a reward.</p>
+        </section>
+        <section class="hints-section">
+          <h3>Rewards</h3>
+          <p>Speed boost, HP refill, extra life or full heal, and a temporary shield (invincibility).</p>
+        </section>
+        <section class="hints-section">
+          <h3>Dynamite (trap)</h3>
+          <p>Some boxes give dynamite: a chain timer (~5 s), then 50 damage. To disarm, jump twice in a row without steering (no Left/Right input) to detach before it explodes.</p>
+        </section>
+      </div>
+      <div class="hints-actions">
+        <button class="btn btn-secondary" id="hints-back-btn">Back</button>
+        <button class="btn" id="hints-resume-btn">Resume</button>
+      </div>
     </div>
 
     <!-- Dynamite countdown red flash (semi-transparent, slope stays visible) -->
@@ -598,6 +731,10 @@
       const exitConfirmOverlay = document.getElementById("exit-confirm");
       const exitConfirmCancel = document.getElementById("exit-confirm-cancel");
       const exitConfirmYes = document.getElementById("exit-confirm-yes");
+      const hintsOverlay = document.getElementById("hints-overlay");
+      const hintsBtn = document.getElementById("hints-btn");
+      const hintsBackBtn = document.getElementById("hints-back-btn");
+      const hintsResumeBtn = document.getElementById("hints-resume-btn");
       const scoreVal = document.getElementById("score-val");
       const speedVal = document.getElementById("speed-val");
       const hpBar = document.getElementById("hp-bar");
@@ -1883,7 +2020,13 @@
         if (e.key === "ArrowUp") input.up = true;
         if (e.key === "ArrowDown") input.down = true;
         if (e.key === " ") input.jump = true;
-        if (e.key === "Escape") togglePause();
+        if (e.key === "Escape") {
+          if (hintsOverlay && !hintsOverlay.classList.contains("hidden")) {
+            hintsOverlay.classList.add("hidden");
+          } else {
+            togglePause();
+          }
+        }
       }
       function onKeyUp(e) {
         if (e.key === "ArrowLeft") input.left = false;
@@ -1919,6 +2062,22 @@
         resumeBtn.blur();
         togglePause();
       });
+      hintsBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        hintsBtn.blur();
+        hintsOverlay.classList.remove("hidden");
+      });
+      hintsBackBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        hintsBackBtn.blur();
+        hintsOverlay.classList.add("hidden");
+      });
+      hintsResumeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        hintsResumeBtn.blur();
+        hintsOverlay.classList.add("hidden");
+        togglePause();
+      });
       exitBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         exitBtn.blur();
@@ -1936,6 +2095,7 @@
         resetGameStateAndScene(true);
         gameState = "MENU";
         pauseMenu.classList.add("hidden");
+        if (hintsOverlay) hintsOverlay.classList.add("hidden");
         menuOverlay.classList.remove("hidden");
         pauseBtn.innerText = "||";
         if (renderer && renderer.domElement)
@@ -1948,8 +2108,9 @@
         resetGame();
       });
 
-      // Ensure exit confirm overlay is hidden on page load
+      // Ensure exit confirm and hints overlays are hidden on page load
       exitConfirmOverlay.classList.add("hidden");
+      if (hintsOverlay) hintsOverlay.classList.add("hidden");
 
       init();
     </script>
