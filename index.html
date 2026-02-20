@@ -10,6 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
       @import url("https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap");
+      @import url("https://fonts.googleapis.com/css2?family=Pacifico&display=swap");
 
       * {
         box-sizing: border-box;
@@ -163,6 +164,70 @@
         z-index: 20;
       }
 
+      /* Main menu: background image, no header bar */
+      #menu-overlay.overlay-menu {
+        background-image: url("assets/home-page-bg-image.png");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-color: rgba(0, 0, 0, 0.15);
+        backdrop-filter: none;
+      }
+      #menu-overlay h1 {
+        color: #7ec8e3;
+        text-shadow:
+          0 1px 2px rgba(0, 0, 0, 0.8),
+          0 2px 4px rgba(0, 0, 0, 0.5),
+          0 0 12px rgba(255, 255, 255, 0.9),
+          0 0 24px rgba(126, 200, 227, 0.6),
+          2px 2px 4px rgba(0, 0, 0, 0.4);
+        font-size: 48px;
+      }
+      #menu-overlay h1 .title-cursive {
+        font-family: "Pacifico", cursive;
+        font-size: 1.35em;
+        display: block;
+        margin-top: 2px;
+        
+      }
+      #menu-overlay p.subtitle {
+        color: #fff;
+        text-shadow:
+          0 1px 4px rgba(0, 0, 0, 0.5),
+          0 0 12px rgba(0, 0, 0, 0.3);
+      }
+      #menu-overlay .start-btn-wrap .btn,
+      #menu-overlay #start-btn {
+        background: #e74c3c;
+        box-shadow:
+          0 0 20px rgba(231, 76, 60, 0.6),
+          0 4px 15px rgba(231, 76, 60, 0.4);
+      }
+      #menu-overlay .start-btn-wrap .btn:hover,
+      #menu-overlay #start-btn:hover {
+        background: #c0392b;
+        box-shadow:
+          0 0 24px rgba(231, 76, 60, 0.8),
+          0 4px 15px rgba(231, 76, 60, 0.5);
+      }
+      #menu-overlay .controls-hint {
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        border-radius: 12px;
+        padding: 15px 25px;
+      }
+      #menu-overlay .controls-hint .control-divider {
+        color: rgba(255, 255, 255, 0.7);
+      }
+      #menu-overlay .controls-hint .key-icon,
+      #menu-overlay .controls-hint .control-desc {
+        color: #fff;
+      }
+      #menu-overlay .controls-hint .controls-prizes {
+        font-size: 0.9em;
+        color: #f1c40f;
+      }
+
       h1 {
         font-size: 60px;
         margin: 0 0 10px 0;
@@ -245,9 +310,28 @@
         color: #555;
         background: rgba(255, 255, 255, 0.9);
         padding: 15px 25px;
-        border-radius: 20px;
+      }
+      .controls-hint table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .controls-hint td {
+        padding: 4px 0;
+        vertical-align: middle;
+      }
+      .controls-hint .key-icon {
+        text-align: left;
+        white-space: nowrap;
+        width: 2.5em;
+      }
+      .controls-hint .control-divider {
         text-align: center;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        color: #999;
+        width: 1em;
+        padding: 0 8px;
+      }
+      .controls-hint .control-desc {
+        text-align: left;
       }
 
       .hidden {
@@ -316,19 +400,35 @@
 
     <!-- Main Menu -->
     <div id="menu-overlay" class="overlay-menu">
-      <h1>Summit<br />Shredder 3D</h1>
+      <h1>Summit<br /><span class="title-cursive">Shredder 3D</span></h1>
       <p class="subtitle">Jump, Dodge, and Survive the Slope!</p>
       <div class="start-btn-wrap">
         <button class="btn" id="start-btn" type="button">Hit the Slopes</button>
       </div>
       <div class="controls-hint">
-        <b>Arrow Keys</b>: Steer<br />
-        <b>Up + Arrow</b>: Fast Turn<br />
-        <b>Down + Arrow</b>: Smooth brake to 1<br />
-        <b>Space</b>: Jump<br />
-        <span style="font-size: 0.9em; color: #e67e22"
-          >Jump on Boxes for Prizes!</span
-        >
+        <table>
+          <tr>
+            <td class="key-icon">⬅️ ➡️</td>
+            <td class="control-divider">|</td>
+            <td class="control-desc">Steer</td>
+          </tr>
+          <tr>
+            <td class="key-icon">⬆️</td>
+            <td class="control-divider">|</td>
+            <td class="control-desc">Controlled turn</td>
+          </tr>
+          <tr>
+            <td class="key-icon">⬇️</td>
+            <td class="control-divider">|</td>
+            <td class="control-desc">Smooth brake to 1</td>
+          </tr>
+          <tr>
+            <td class="key-icon">␣ Space</td>
+            <td class="control-divider">|</td>
+            <td class="control-desc">Jump</td>
+          </tr>
+        </table>
+        <span class="controls-prizes">Jump on Boxes for Prizes!</span>
       </div>
     </div>
 
@@ -342,9 +442,13 @@
     <!-- Exit confirm (in-game UI) -->
     <div id="exit-confirm" class="confirm-overlay hidden">
       <div class="confirm-dialog">
-        <p class="confirm-message">Exit to menu? Your current progress will be lost.</p>
+        <p class="confirm-message">
+          Exit to menu? Your current progress will be lost.
+        </p>
         <div class="confirm-actions">
-          <button class="btn btn-secondary" id="exit-confirm-cancel">Cancel</button>
+          <button class="btn btn-secondary" id="exit-confirm-cancel">
+            Cancel
+          </button>
           <button class="btn" id="exit-confirm-yes">Exit</button>
         </div>
       </div>
@@ -445,7 +549,13 @@
       let initRetries = 0;
 
       // INPUT
-      const input = { left: false, right: false, up: false, down: false, jump: false };
+      const input = {
+        left: false,
+        right: false,
+        up: false,
+        down: false,
+        jump: false,
+      };
 
       // DOM ELEMENTS
       const startBtn = document.getElementById("start-btn");
@@ -834,8 +944,16 @@
         const isElevated = boxMesh.userData.isElevated;
 
         // Visual Effect (elevated: same as regular but gold rings + more particles)
-        createRingEffect(boxMesh.position, isElevated ? { color: 0xffd700, inner: 1.2, outer: 1.8 } : {});
-        if (isElevated) createRingEffect(boxMesh.position, { color: 0xffd700, inner: 0.6, outer: 1.0 });
+        createRingEffect(
+          boxMesh.position,
+          isElevated ? { color: 0xffd700, inner: 1.2, outer: 1.8 } : {},
+        );
+        if (isElevated)
+          createRingEffect(boxMesh.position, {
+            color: 0xffd700,
+            inner: 0.6,
+            outer: 1.0,
+          });
         const particleCount = isElevated ? 18 : 10;
         for (let i = 0; i < particleCount; i++) {
           const v = new THREE.Vector3(
@@ -972,7 +1090,8 @@
         obstacles.forEach((o) => scene.remove(o));
         obstacles.length = 0;
         for (let i = 1; i < 25; i++) spawnChunk(-i * 10);
-        if (playerMeshContainer && playerMeshContainer.userData) playerMeshContainer.userData.leanBack = 0;
+        if (playerMeshContainer && playerMeshContainer.userData)
+          playerMeshContainer.userData.leanBack = 0;
         updateUI();
       }
 
@@ -983,7 +1102,9 @@
         window.focus();
         menuOverlay.classList.add("hidden");
         pauseMenu.classList.add("hidden");
-        if (renderer && renderer.domElement) renderer.domElement.style.pointerEvents = "auto";
+        exitConfirmOverlay.classList.add("hidden");
+        if (renderer && renderer.domElement)
+          renderer.domElement.style.pointerEvents = "auto";
       }
 
       function updateUI() {
@@ -1046,10 +1167,16 @@
         let angleMagnitude = 1.6 * Math.pow(turnRatio, 1.2);
         if (angleMagnitude < 0.2) angleMagnitude = 0.2;
         if (!input.up && isSteering) {
-          angleMagnitude *= CONFIG.physics.steerNoUpTurnScale != null ? CONFIG.physics.steerNoUpTurnScale : 0.5;
+          angleMagnitude *=
+            CONFIG.physics.steerNoUpTurnScale != null
+              ? CONFIG.physics.steerNoUpTurnScale
+              : 0.5;
         }
         if (input.down && isSteering) {
-          const extra = CONFIG.physics.steerDownExtraTurnRad != null ? CONFIG.physics.steerDownExtraTurnRad : Math.PI / 4;
+          const extra =
+            CONFIG.physics.steerDownExtraTurnRad != null
+              ? CONFIG.physics.steerDownExtraTurnRad
+              : Math.PI / 4;
           angleMagnitude += extra;
         }
 
@@ -1058,9 +1185,12 @@
         if (input.right) targetAngle = -angleMagnitude;
 
         // Interpolate player angle (faster when carving for better control)
-        const interpolationSpeed = (isSteering && input.up)
-          ? (CONFIG.physics.carveTurnInterpolation != null ? CONFIG.physics.carveTurnInterpolation : 0.25)
-          : 0.15;
+        const interpolationSpeed =
+          isSteering && input.up
+            ? CONFIG.physics.carveTurnInterpolation != null
+              ? CONFIG.physics.carveTurnInterpolation
+              : 0.25
+            : 0.15;
         playerAngle += (targetAngle - playerAngle) * interpolationSpeed;
 
         // Long hold (2s): brake toward min speed, but never full stop
@@ -1073,19 +1203,26 @@
         // --- SPEED & FRICTION ---
         const facingDirZ = -Math.cos(playerAngle);
         const facingDirX = -Math.sin(playerAngle);
-        
+
         // Calculate acceleration based on control state (consistent throughout game)
         let accel = 0;
         if (isSteering && input.up) {
           // Up+steer: apply minimal acceleration to maintain speed (still capped at 60%)
-          accel = CONFIG.physics.acceleration * (CONFIG.physics.carveAccelScale != null ? CONFIG.physics.carveAccelScale : 0.25);
+          accel =
+            CONFIG.physics.acceleration *
+            (CONFIG.physics.carveAccelScale != null
+              ? CONFIG.physics.carveAccelScale
+              : 0.25);
         } else if (isSteering && input.down) {
           // Down+steer: no acceleration (braking)
           accel = 0;
         } else {
           // Default, steering only, down only, or Up (not steering): apply acceleration with scale
           accel = CONFIG.physics.acceleration;
-          accel *= (CONFIG.physics.accelNoUpScale != null ? CONFIG.physics.accelNoUpScale : 0.55);
+          accel *=
+            CONFIG.physics.accelNoUpScale != null
+              ? CONFIG.physics.accelNoUpScale
+              : 0.55;
         }
 
         if (speed > CONFIG.physics.maxSpeed) {
@@ -1096,19 +1233,39 @@
           // Friction: Up = carve (lose less); Down = smooth brake to 1; else gentle decay, floor 30%
           if (isSteering) {
             if (input.up) {
-              speed *= (CONFIG.physics.carveFriction != null ? CONFIG.physics.carveFriction : 0.985);
+              speed *=
+                CONFIG.physics.carveFriction != null
+                  ? CONFIG.physics.carveFriction
+                  : 0.985;
               // Cap speed at 60% when carving (ceiling, not floor) - prevents speed increase
-              const carveMax = CONFIG.physics.maxSpeed * (CONFIG.physics.carveMaxSpeedFrac != null ? CONFIG.physics.carveMaxSpeedFrac : 0.6);
+              const carveMax =
+                CONFIG.physics.maxSpeed *
+                (CONFIG.physics.carveMaxSpeedFrac != null
+                  ? CONFIG.physics.carveMaxSpeedFrac
+                  : 0.6);
               speed = Math.min(speed, carveMax);
             } else if (input.down) {
-              const downFric = CONFIG.physics.steerDownFriction != null ? CONFIG.physics.steerDownFriction : 0.98;
-              const downMin = CONFIG.physics.steerDownMinSpeed != null ? CONFIG.physics.steerDownMinSpeed : 0.01;
+              const downFric =
+                CONFIG.physics.steerDownFriction != null
+                  ? CONFIG.physics.steerDownFriction
+                  : 0.98;
+              const downMin =
+                CONFIG.physics.steerDownMinSpeed != null
+                  ? CONFIG.physics.steerDownMinSpeed
+                  : 0.01;
               speed *= downFric;
               if (speed < downMin) speed = downMin;
             } else {
-              speed *= (CONFIG.physics.steerNoUpFriction != null ? CONFIG.physics.steerNoUpFriction : 0.997);
+              speed *=
+                CONFIG.physics.steerNoUpFriction != null
+                  ? CONFIG.physics.steerNoUpFriction
+                  : 0.997;
               // Cap speed at 75% when steering only (left/right without Up/Down)
-              const steerOnlyMax = CONFIG.physics.maxSpeed * (CONFIG.physics.steerOnlyMaxSpeedFrac != null ? CONFIG.physics.steerOnlyMaxSpeedFrac : 0.75);
+              const steerOnlyMax =
+                CONFIG.physics.maxSpeed *
+                (CONFIG.physics.steerOnlyMaxSpeedFrac != null
+                  ? CONFIG.physics.steerOnlyMaxSpeedFrac
+                  : 0.75);
               speed = Math.min(speed, steerOnlyMax);
             }
           } else {
@@ -1116,16 +1273,26 @@
               // Down only: same acceleration as default (already applied above)
               // No additional friction - acceleration handles speed increase
             } else {
-              const straightFric = CONFIG.physics.straightLineFriction != null ? CONFIG.physics.straightLineFriction : 0.997;
+              const straightFric =
+                CONFIG.physics.straightLineFriction != null
+                  ? CONFIG.physics.straightLineFriction
+                  : 0.997;
               speed *= straightFric;
             }
           }
 
           speed = Math.min(speed, CONFIG.physics.maxSpeed);
-          const minFrac = CONFIG.physics.steerNoUpMinSpeed != null ? CONFIG.physics.steerNoUpMinSpeed : 0.3;
+          const minFrac =
+            CONFIG.physics.steerNoUpMinSpeed != null
+              ? CONFIG.physics.steerNoUpMinSpeed
+              : 0.3;
           const minSpeed = CONFIG.physics.maxSpeed * minFrac;
-          const downMin = CONFIG.physics.steerDownMinSpeed != null ? CONFIG.physics.steerDownMinSpeed : 0.01;
-          if (isSteering && !input.up && !input.down && speed < minSpeed) speed = minSpeed;
+          const downMin =
+            CONFIG.physics.steerDownMinSpeed != null
+              ? CONFIG.physics.steerDownMinSpeed
+              : 0.01;
+          if (isSteering && !input.up && !input.down && speed < minSpeed)
+            speed = minSpeed;
         }
 
         // --- OFF-SLOPE SLOWDOWN (promote staying in obstacle area) ---
@@ -1136,9 +1303,13 @@
         }
 
         // --- VELOCITY (drift forward + sideways from speed and facing) ---
-        const minFrac = CONFIG.physics.steerNoUpMinSpeed != null ? CONFIG.physics.steerNoUpMinSpeed : 0.3;
+        const minFrac =
+          CONFIG.physics.steerNoUpMinSpeed != null
+            ? CONFIG.physics.steerNoUpMinSpeed
+            : 0.3;
         const minSpeedDrift = CONFIG.physics.maxSpeed * minFrac;
-        if (stopDrift && !input.down && speed < minSpeedDrift) speed = minSpeedDrift;
+        if (stopDrift && !input.down && speed < minSpeedDrift)
+          speed = minSpeedDrift;
         playerVelocity.z = speed * facingDirZ;
         playerVelocity.x = speed * facingDirX;
 
@@ -1151,9 +1322,18 @@
           playerGroup.position.x = halfWidth;
 
         // Visuals: Down only = lean back; Down+steer = Y-axis only (no lean), turn +45°
-        const leanBackTarget = (input.down && !isSteering) ? (CONFIG.physics.steerDownLeanBack != null ? CONFIG.physics.steerDownLeanBack : 0.55) : 0;
-        const leanBack = (playerMeshContainer.userData.leanBack != null ? playerMeshContainer.userData.leanBack : 0);
-        playerMeshContainer.userData.leanBack = leanBack + (leanBackTarget - leanBack) * 0.12;
+        const leanBackTarget =
+          input.down && !isSteering
+            ? CONFIG.physics.steerDownLeanBack != null
+              ? CONFIG.physics.steerDownLeanBack
+              : 0.55
+            : 0;
+        const leanBack =
+          playerMeshContainer.userData.leanBack != null
+            ? playerMeshContainer.userData.leanBack
+            : 0;
+        playerMeshContainer.userData.leanBack =
+          leanBack + (leanBackTarget - leanBack) * 0.12;
         playerMeshContainer.rotation.x = playerMeshContainer.userData.leanBack;
         playerMeshContainer.rotation.y = playerAngle;
         playerMeshContainer.rotation.z = -playerAngle * 0.3;
@@ -1510,14 +1690,18 @@
         pauseMenu.classList.add("hidden");
         menuOverlay.classList.remove("hidden");
         pauseBtn.innerText = "||";
-        if (renderer && renderer.domElement) renderer.domElement.style.pointerEvents = "none";
+        if (renderer && renderer.domElement)
+          renderer.domElement.style.pointerEvents = "none";
       });
 
-      startBtn.addEventListener("click", function(e) {
+      startBtn.addEventListener("click", function (e) {
         e.preventDefault();
         startBtn.blur();
         resetGame();
       });
+
+      // Ensure exit confirm overlay is hidden on page load
+      exitConfirmOverlay.classList.add("hidden");
 
       init();
     </script>
