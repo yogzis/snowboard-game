@@ -783,6 +783,7 @@
         });
         shieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
         shieldMesh.visible = false;
+        shieldMesh.userData = { pulseFrames: 0, shieldFlickerPhase: 0 };
         playerMeshContainer.add(shieldMesh);
 
         // Dynamite (enlarged for visibility)
@@ -1085,6 +1086,9 @@
           } else {
             playerStats.invincibleTimer = CONFIG.game.invincibleTime * 1.5;
             shieldMesh.visible = true;
+            shieldMesh.scale.setScalar(1);
+            shieldMesh.userData.pulseFrames = 0;
+            shieldMesh.userData.shieldFlickerPhase = 0;
             triggerNotification("SUPER SHIELD!", "#00ffff");
           }
         } else {
@@ -1121,6 +1125,9 @@
           } else {
             playerStats.invincibleTimer = CONFIG.game.invincibleTime;
             shieldMesh.visible = true;
+            shieldMesh.scale.setScalar(1);
+            shieldMesh.userData.pulseFrames = 0;
+            shieldMesh.userData.shieldFlickerPhase = 0;
             triggerNotification("SHIELD ACTIVE!", "#00ffff");
           }
         }
@@ -1140,6 +1147,9 @@
             playerStats.hp = 100;
             playerStats.invincibleTimer = 120;
             shieldMesh.visible = true;
+            shieldMesh.scale.setScalar(1);
+            shieldMesh.userData.pulseFrames = 0;
+            shieldMesh.userData.shieldFlickerPhase = 0;
             triggerNotification("LIFE LOST!", "#ff0000");
           }
         }
@@ -1518,7 +1528,29 @@
         if (playerStats.invincibleTimer > 0) {
           playerStats.invincibleTimer--;
           shieldMesh.rotation.y += 0.1;
-          if (playerStats.invincibleTimer <= 0) shieldMesh.visible = false;
+          const pulseFrames = shieldMesh.userData.pulseFrames || 0;
+          if (pulseFrames > 0) {
+            shieldMesh.scale.setScalar(1 + 0.3 * (pulseFrames / 15));
+            shieldMesh.userData.pulseFrames = pulseFrames - 1;
+          } else {
+            shieldMesh.scale.setScalar(1);
+          }
+          // Flicker from 5s to 2s left (300–120 frames); dim from 2s to 0s (120–0 frames)
+          const t = playerStats.invincibleTimer;
+          let baseOpacity = 0.3;
+          if (t <= 120) {
+            baseOpacity = (t / 120) * 0.3; // Dim between 2s and 0s left
+          } else if (t <= 300) {
+            const phase = shieldMesh.userData.shieldFlickerPhase || 0;
+            shieldMesh.userData.shieldFlickerPhase = phase + 0.2;
+            baseOpacity *= 0.7 + 0.3 * Math.sin(phase);
+            baseOpacity = Math.max(0.05, baseOpacity); // Flicker between 5s and 2s left
+          }
+          shieldMesh.material.opacity = baseOpacity;
+          if (playerStats.invincibleTimer <= 0) {
+            shieldMesh.visible = false;
+            shieldMesh.scale.setScalar(1);
+          }
         }
 
         // --- BOOST TRAIL (glowing skid marks while boosting, on ground) ---
@@ -1710,7 +1742,16 @@
                 } else {
                   scene.remove(ob);
                   obstacles.splice(i, 1);
-                  takeDamage(20);
+                  if (playerStats.invincibleTimer > 0) {
+                    // Force field: HP protected, speed still drops
+                    speed *= 0.5;
+                    shakeCamera();
+                    playerGroup.position.y += 0.2;
+                    shieldMesh.userData.pulseFrames = 15;
+                    triggerNotification("SHIELD!", "#00ffff");
+                  } else {
+                    takeDamage(20);
+                  }
                 }
               }
             }
