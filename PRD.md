@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-**Summit Shredder 3D** is an infinite runner arcade game that simulates high-speed snowboarding. The game features a low-poly 3D aesthetic, physics-based movement, procedural terrain generation, and a risk/reward system with tricks, obstacles, and loot boxes. It is a single-file HTML5 application utilizing the Three.js library.
+**Summit Shredder 3D** is an infinite runner arcade game that simulates high-speed snowboarding. The game features a low-poly 3D aesthetic, physics-based movement, procedural terrain generation, and a risk/reward system with tricks, obstacles, and loot boxes. It is a modular HTML5 application built with Vite, using Babylon.js for 3D rendering and a clear separation between game logic and rendering.
 
 ---
 
@@ -164,14 +164,15 @@ Breaking a Mystery Box triggers a shockwave ring effect, granting one of:
 
 ## 7. Technical Specifications
 
-- **Framework:** Three.js (r128)
-- **Architecture:** Single `index.html` with HTML, CSS, JS
-- **Rendering:** WebGLRenderer with PCFSoftShadowMap enabled
-- **Assets:** Fully procedural (player, trees, rocks via Three.js primitives – BoxGeometry, CylinderGeometry, etc.)
+- **3D Engine:** Babylon.js (@babylonjs/core)
+- **Build:** Vite; ES modules
+- **Architecture:** Modular structure with game logic (state, physics, obstacles, collision, game loop) fully separated from the rendering layer. Entry: `index.html` + `src/main.js`; config, game, rendering, and UI in separate modules.
+- **Rendering:** Babylon.js Engine and Scene; procedural meshes (player, trees, rocks, boxes, ramps, boost pads) and materials; camera driven by game state each frame.
+- **Assets:** Fully procedural (no external 3D assets).
 - **Compatibility:**
   - Desktop: Keyboard controls
   - Mobile: Touch zones (left/right for steering, center/tap for jumping)
-- **Initialization:** Robust loading checks for Three.js readiness; button blurring prevents focus-stealing bugs.
+- **Initialization:** Canvas and scene created at startup; button blurring prevents focus-stealing bugs.
 - **Version Control:** Git repository initialized, ready for GitHub integration
 
 ## 8. Game Design Philosophy
