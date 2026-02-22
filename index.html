@@ -732,7 +732,7 @@
           acceleration: 0.0045, // Faster, cooler feel while staying smooth
           friction: 0.98,
           carveFriction: 0.997, // With Up: preserve speed during aggressive turns (gradual speed decrease)
-          carveMaxSpeedFrac: 0.6, // Carve capped at 60% of maxSpeed (ceiling for Up+steer)
+          carveMaxSpeedFrac: 0.75, // Carve capped at 60% of maxSpeed (ceiling for Up+steer)
           carveAccelScale: 0.25, // Acceleration multiplier when carving (maintains speed)
           carveTurnInterpolation: 0.25, // Turn interpolation speed when carving (faster control)
           steerNoUpFriction: 0.998, // Without Up: gentler decay, smoother feel
@@ -745,6 +745,8 @@
           steerDownOnlyAccel: 0.002, // When only Down: slow, smooth speed increase per frame
           steerNoUpTurnScale: 0.5, // Without Up: gentler turn angle, no big curve
           accelNoUpScale: 0.55, // Without Up: smooth speed buildup; with Up uses full accel
+          accelUpOnlyScale: 0.88, // Up only (lean forward): faster than default, slower than lean back
+          accelDownOnlyScale: 1.0, // Down only (lean back): highest straight-line acceleration
           straightLineFriction: 0.997, // Going straight: very gentle decay (smooth coast)
           gravity: 0.02,
           jumpForceShort: 0.22, // Min force at zero charge (tap)
@@ -1640,8 +1642,22 @@
         } else if (isSteering && input.down) {
           // Down+steer: no acceleration (braking)
           accel = 0;
+        } else if (!isSteering && input.up) {
+          // Up only (lean forward): faster than default, slower than lean back
+          accel =
+            CONFIG.physics.acceleration *
+            (CONFIG.physics.accelUpOnlyScale != null
+              ? CONFIG.physics.accelUpOnlyScale
+              : 0.78);
+        } else if (!isSteering && input.down) {
+          // Down only (lean back): highest straight-line acceleration
+          accel =
+            CONFIG.physics.acceleration *
+            (CONFIG.physics.accelDownOnlyScale != null
+              ? CONFIG.physics.accelDownOnlyScale
+              : 1.0);
         } else {
-          // Default, steering only, down only, or Up (not steering): apply acceleration with scale
+          // Default or steering only: apply acceleration with scale
           accel = CONFIG.physics.acceleration;
           accel *=
             CONFIG.physics.accelNoUpScale != null
