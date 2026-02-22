@@ -23,7 +23,7 @@
 | Arrow Left / Right | Steer            | Steer the snowboarder. Curve intensity increases based on hold duration.    |
 | Arrow Up           | Lean Forward     | When held with Left/Right, carves with increased control (60% speed cap).   |
 | Arrow Down         | Lean Back        | When held alone, increases speed. When held with Left/Right, brakes smoothly to 1 km/h. |
-| Space Bar          | Jump             | Performs a single high jump (one jump per press, not repeated).            |
+| Space Bar          | Jump             | Tap for short jump; hold to charge a higher long jump (green bar). Long jump capped above previous high. |
 | Escape             | Pause            | Toggles the Pause Menu.                                                     |
 | Enter              | Start Game       | Starts the game from the main menu.                                         |
 | Mouse Click        | UI Interaction   | Used for Start, Pause, Resume, and Exit buttons.                            |
@@ -76,10 +76,10 @@
 
 #### Jumping
 
-- **Jump Force:** `0.42` vertical units (high jump)
-- **Single Jump Per Press:** Holding Space performs one jump (not repeated)
-- **Ramp Launch:** Hitting a ramp launches with `0.4` vertical units
-- **Ramp Assist:** Tap Space within ~0.8 seconds (50 frames) after ramp launch for assisted boost (`+0.32` vertical units) to reach elevated boxes
+- **Short Jump (tap):** Fixed lower force (~`0.22` vertical units); release Space quickly for a short hop.
+- **Long Jump (hold):** Chargeable: hold Space to fill the green charge bar; release to jump. Force scales from `0.42` (min charge) to `0.48` (full charge, ceiling above the old high jump). Tap threshold ~150 ms; full charge ~400 ms after threshold.
+- **Ramp Launch:** Hitting a ramp launches with `0.4` vertical units.
+- **Ramp Assist:** Tap Space within ~0.8 seconds after ramp launch for assisted boost (`+0.32` vertical units) to reach elevated boxes.
 
 ---
 

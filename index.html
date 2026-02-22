@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
-    <title>Summit Shredder 3D</title>
+    <title>Summit Shredder</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
       @import url("https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap");
@@ -104,6 +104,38 @@
         font-size: 24px;
         color: #e74c3c;
         letter-spacing: 2px;
+      }
+
+      /* Jump charge bar: vertical, right of character, visible while holding */
+      #jump-charge-container {
+        position: absolute;
+        right: 18%;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 28px;
+        height: 200px;
+        background: rgba(0, 0, 0, 0.5);
+        border: 3px solid #1dd1a1;
+        border-radius: 14px;
+        overflow: hidden;
+        display: flex;
+        align-items: flex-end;
+        box-shadow:
+          0 0 20px #1dd1a1,
+          0 0 10px #00d26a;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s;
+      }
+      #jump-charge-container.visible {
+        opacity: 1;
+      }
+      #jump-charge-bar {
+        width: 100%;
+        height: 0%;
+        min-height: 0;
+        background: linear-gradient(to top, #00d26a, #1dd1a1);
+        transition: height 0.03s linear;
       }
 
       #score-display span {
@@ -501,11 +533,14 @@
         </div>
       </div>
       <div id="notification-area"></div>
+      <div id="jump-charge-container">
+        <div id="jump-charge-bar"></div>
+      </div>
     </div>
 
     <!-- Main Menu -->
     <div id="menu-overlay" class="overlay-menu">
-      <h1>Summit<br /><span class="title-cursive">Shredder 3D</span></h1>
+      <h1>Summit<br /><span class="title-cursive">Shredder</span></h1>
       <p class="subtitle">Jump, Dodge, and Survive the Slope!</p>
       <div class="start-btn-wrap">
         <button class="btn" id="start-btn" type="button">Hit the Slopes</button>
@@ -581,7 +616,9 @@
               <tr>
                 <td class="key-icon">␣ Space</td>
                 <td class="control-divider">|</td>
-                <td class="control-desc">Jump (one jump per press)</td>
+                <td class="control-desc">
+                  Tap = short jump; hold = charge long jump (green bar)
+                </td>
               </tr>
               <tr>
                 <td class="key-icon">Esc</td>
@@ -604,9 +641,10 @@
         <section class="hints-section">
           <h3>Jumping</h3>
           <p>
-            One jump per Space press. Ramps launch you into the air; tap Space
-            again in the air after a ramp for an extra boost to reach elevated
-            boxes.
+            Tap Space for a short jump; hold Space to charge a higher long jump
+            (green bar). Long jump is capped above the old high jump. Ramps
+            launch you into the air; tap Space again in the air after a ramp for
+            an extra boost to reach elevated boxes.
           </p>
         </section>
         <section class="hints-section">
@@ -709,7 +747,9 @@
           accelNoUpScale: 0.55, // Without Up: smooth speed buildup; with Up uses full accel
           straightLineFriction: 0.997, // Going straight: very gentle decay (smooth coast)
           gravity: 0.02,
-          jumpForce: 0.42, // High jump (one per Space press)
+          jumpForceShort: 0.22, // Min force at zero charge (tap)
+          jumpChargeDurationMs: 400, // Time from keydown to full charge
+          jumpForceMax: 0.58, // Max force at full charge (smooth, no timing gate)
           rampForce: 0.4, // Lower so elevated box needs a timed jump (Space) to reach
           rampAssistWindow: 50 / 60, // Seconds after ramp to tap Space for smooth assisted jump (~0.833s)
           rampAssistBoost: 0.32, // Extra upward boost when tapping Space in air after ramp
@@ -782,7 +822,9 @@
         up: false,
         down: false,
         jump: false,
+        jumpCharge: 0, // 0–1, from hold duration (smooth, no timing gate)
       };
+      let jumpPressStartedAt = null; // set on keydown/touchstart, cleared on keyup/touchend
 
       // DOM ELEMENTS
       const startBtn = document.getElementById("start-btn");
@@ -802,6 +844,10 @@
       const speedVal = document.getElementById("speed-val");
       const hpBar = document.getElementById("hp-bar");
       const hpText = document.getElementById("hp-text");
+      const jumpChargeContainer = document.getElementById(
+        "jump-charge-container",
+      );
+      const jumpChargeBar = document.getElementById("jump-charge-bar");
       const livesVal = document.getElementById("lives-val");
       const notificationArea = document.getElementById("notification-area");
       const dynamiteFlashEl = document.getElementById("dynamite-flash");
@@ -1378,6 +1424,13 @@
           playerStats.hp = 100;
           playerStats.lives = 3;
         }
+        input.jump = false;
+        input.jumpCharge = 0;
+        jumpPressStartedAt = null;
+        playerStats.isJumping = false;
+        if (jumpChargeContainer)
+          jumpChargeContainer.classList.remove("visible");
+        if (jumpChargeBar) jumpChargeBar.style.height = "0%";
         playerStats.hasDynamite = false;
         playerStats.didJumpThisAirtime = false;
         playerStats.rampLaunchFramesAgo = null;
@@ -1809,14 +1862,38 @@
           boostTrailSpawnAccum = 0;
         }
 
-        // --- JUMPING (one jump per press; holding Space = single high jump) ---
+        // --- Jump charge bar: visible while holding, fills from 0 from keydown (no reset) ---
+        if (jumpChargeContainer && jumpChargeBar) {
+          if (jumpPressStartedAt != null && !playerStats.isJumping) {
+            const chargeDuration = CONFIG.physics.jumpChargeDurationMs ?? 400;
+            const elapsed = performance.now() - jumpPressStartedAt;
+            const charge = Math.min(1, elapsed / chargeDuration);
+            jumpChargeContainer.classList.add("visible");
+            jumpChargeBar.style.height = charge * 100 + "%";
+          } else {
+            jumpChargeContainer.classList.remove("visible");
+            jumpChargeBar.style.height = "0%";
+          }
+        }
+        // --- JUMPING (on release: force = lerp(short, max, charge), no timing gate) ---
         if (input.jump && !playerStats.isJumping) {
+          const shortF =
+            CONFIG.physics.jumpForceShort != null
+              ? CONFIG.physics.jumpForceShort
+              : 0.32;
+          const maxF =
+            CONFIG.physics.jumpForceMax != null
+              ? CONFIG.physics.jumpForceMax
+              : 0.58;
+          const c = Math.max(0, Math.min(1, input.jumpCharge));
+          const force = shortF + (maxF - shortF) * c;
           playerStats.isJumping = true;
           playerStats.didJumpThisAirtime = true;
           playerStats.rampLaunchFramesAgo = null;
           playerStats.canRampAssistJump = false;
-          playerVelocity.y = CONFIG.physics.jumpForce * REF_FPS; // per-second
-          input.jump = false; // Consume so holding Space does not repeat jump
+          playerVelocity.y = force * REF_FPS; // per-second
+          input.jump = false;
+          input.jumpCharge = 0;
         }
         // Ramp assist: tap Space once while in the air after a ramp for a smooth extra boost (reaches elevated box)
         const assistWindow =
@@ -1837,7 +1914,8 @@
           playerVelocity.y += assistBoost * REF_FPS; // per-second
           playerStats.didJumpThisAirtime = true;
           playerStats.canRampAssistJump = false;
-          input.jump = false; // Consume so one assist per press
+          input.jump = false;
+          input.jumpCharge = 0;
         }
         if (playerStats.isJumping) {
           if (playerStats.rampLaunchFramesAgo != null)
@@ -2133,7 +2211,7 @@
         if (e.key === "ArrowRight") input.right = true;
         if (e.key === "ArrowUp") input.up = true;
         if (e.key === "ArrowDown") input.down = true;
-        if (e.key === " ") input.jump = true;
+        if (e.key === " ") jumpPressStartedAt = performance.now();
         if (e.key === "Escape") {
           if (hintsOverlay && !hintsOverlay.classList.contains("hidden")) {
             hintsOverlay.classList.add("hidden");
@@ -2147,7 +2225,15 @@
         if (e.key === "ArrowRight") input.right = false;
         if (e.key === "ArrowUp") input.up = false;
         if (e.key === "ArrowDown") input.down = false;
-        if (e.key === " ") input.jump = false;
+        if (e.key === " ") {
+          if (jumpPressStartedAt != null) {
+            const holdDuration = performance.now() - jumpPressStartedAt;
+            const chargeDuration = CONFIG.physics.jumpChargeDurationMs ?? 400;
+            input.jump = true;
+            input.jumpCharge = Math.min(1, holdDuration / chargeDuration);
+          }
+          jumpPressStartedAt = null;
+        }
       }
       function onTouchStart(e) {
         if (gameState !== "PLAYING") return;
@@ -2156,13 +2242,19 @@
           const w = window.innerWidth;
           if (x < w * 0.3) input.left = true;
           else if (x > w * 0.7) input.right = true;
-          else input.jump = true;
+          else jumpPressStartedAt = performance.now();
         }
       }
       function onTouchEnd(e) {
+        if (jumpPressStartedAt != null) {
+          const holdDuration = performance.now() - jumpPressStartedAt;
+          const chargeDuration = CONFIG.physics.jumpChargeDurationMs ?? 400;
+          input.jump = true;
+          input.jumpCharge = Math.min(1, holdDuration / chargeDuration);
+          jumpPressStartedAt = null;
+        }
         input.left = false;
         input.right = false;
-        input.jump = false;
       }
 
       // Blur buttons after click to prevent focus lingering
