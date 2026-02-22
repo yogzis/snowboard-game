@@ -653,17 +653,17 @@
           gravity: 0.02,
           jumpForce: 0.42, // High jump (one per Space press)
           rampForce: 0.4, // Lower so elevated box needs a timed jump (Space) to reach
-          rampAssistWindow: 50, // Frames after ramp to tap Space for smooth assisted jump (~0.8s)
+          rampAssistWindow: 50 / 60, // Seconds after ramp to tap Space for smooth assisted jump (~0.833s)
           rampAssistBoost: 0.32, // Extra upward boost when tapping Space in air after ramp
-          spinOutThreshold: 120, // 2 seconds at 60fps
+          spinOutThreshold: 2, // Seconds holding turn before spin-out
         },
         game: {
           maxHP: 100,
           maxLives: 3,
-          invincibleTime: 600,
-          dynamiteTime: 300,
+          invincibleTime: 10, // Seconds
+          dynamiteTime: 5, // Seconds
           dynamiteDamage: 85, // Post-explosion one obstacle hit = life lost
-          boostDuration: 180, // Frames (e.g. 3 s at 60 fps)
+          boostDuration: 3, // Seconds
           baseSpawnRate: 0.2,
         },
         world: {
@@ -680,7 +680,7 @@
       let particles = [];
       let effects = []; // Ring effects etc
       let boostTrail = []; // Glowing skid marks while speed boost active
-      let boostTrailSpawnCounter = 0;
+      let boostTrailSpawnAccum = 0; // Time accumulator for spawn interval (seconds)
       let dynamiteSparks = []; // Sparks around dynamite when attached
       let cameraShake = { x: 0, y: 0, intensity: 0 };
 
@@ -690,26 +690,29 @@
       let speed = 0;
       let playerVelocity = { x: 0, y: 0, z: 0 };
       let playerAngle = 0;
-      let turnDuration = 0; // Frames key is held
+      let turnDuration = 0; // Seconds key is held
       let lastSteerDir = 0; // -1 right, 1 left, 0 none (detect flip to avoid brake when straightening)
       let isSpinningOut = false;
-      let spinOutTimer = 0;
+      let spinOutTimer = 0; // Seconds remaining
 
       let playerStats = {
         hp: 100,
         lives: 3,
         isJumping: false,
         didJumpThisAirtime: false, // true only if player pressed Space this air time (required for elevated box)
-        rampLaunchFramesAgo: null, // frames since ramp launch (null when not from ramp)
+        rampLaunchFramesAgo: null, // seconds since ramp launch (null when not from ramp)
         canRampAssistJump: false, // one-time Space tap in air after ramp gives assisted boost
-        invincibleTimer: 0,
-        dynamiteTimer: 0,
+        invincibleTimer: 0, // Seconds remaining
+        dynamiteTimer: 0, // Seconds remaining
         dynamiteJumpCount: 0,
         hasDynamite: false,
-        boostTimer: 0, // Frames remaining of speed boost (smooth ramp-up, then decay)
+        boostTimer: 0, // Seconds remaining of speed boost
         boostTargetSpeed: 0, // Target speed during boost (set when activating; MEGA uses higher value)
       };
       let frameId;
+      let lastFrameTime = 0;
+      const REF_FPS = 60;
+      const DT_MAX = 1 / 30;
       let initRetries = 0;
 
       // INPUT
@@ -1282,10 +1285,10 @@
           if (playerStats.lives <= 0) gameOver();
           else {
             playerStats.hp = 100;
-            playerStats.invincibleTimer = 120;
+            playerStats.invincibleTimer = 2; // seconds
             shieldMesh.visible = true;
             shieldMesh.scale.setScalar(1);
-            shieldMesh.userData.pulseFrames = 0;
+            shieldMesh.userData.pulseTime = 0; // seconds remaining for pulse effect
             shieldMesh.userData.shieldFlickerPhase = 0;
             triggerNotification("LIFE LOST!", "#ff0000");
           }
@@ -1327,6 +1330,7 @@
         shieldMesh.visible = false;
         boostTrail.forEach((m) => scene.remove(m.mesh));
         boostTrail.length = 0;
+        boostTrailSpawnAccum = 0;
         obstacles.forEach((o) => scene.remove(o));
         obstacles.length = 0;
         for (let i = 1; i < 25; i++) spawnChunk(-i * 10);
@@ -1338,6 +1342,7 @@
       function resetGame(fullReset = true) {
         if (!scene || !playerGroup) return;
         resetGameStateAndScene(fullReset);
+        lastFrameTime = performance.now();
         gameState = "PLAYING";
         window.focus();
         menuOverlay.classList.add("hidden");
@@ -1397,31 +1402,33 @@
         mesh.position.z += (Math.random() - 0.5) * 0.2;
         scene.add(mesh);
         const velocity = new THREE.Vector3(
-          (Math.random() - 0.5) * 0.15,
-          Math.random() * 0.12 + 0.05,
-          (Math.random() - 0.5) * 0.15,
+          (Math.random() - 0.5) * 0.15 * REF_FPS,
+          (Math.random() * 0.12 + 0.05) * REF_FPS,
+          (Math.random() - 0.5) * 0.15 * REF_FPS,
         );
         dynamiteSparks.push({ mesh, velocity, life: 1.0 });
       }
 
-      function updatePhysics() {
+      function updatePhysics(dt) {
         if (gameState !== "PLAYING") return;
+
+        const dt60 = dt * REF_FPS;
 
         // --- SPIN OUT MECHANIC ---
         if (isSpinningOut) {
-          spinOutTimer--;
-          playerAngle += 0.4;
-          speed *= 0.92;
+          spinOutTimer -= dt;
+          playerAngle += 0.4 * dt60;
+          speed *= Math.pow(0.92, dt60);
           if (spinOutTimer <= 0) {
             isSpinningOut = false;
             playerAngle = 0;
             speed = 0.1;
           }
           playerVelocity.z = speed * -Math.cos(0);
-          playerGroup.position.z += playerVelocity.z;
+          playerGroup.position.z += playerVelocity.z * dt60;
           playerMeshContainer.rotation.y = playerAngle;
-          if (cameraShake.intensity > 0) cameraShake.intensity *= 0.9;
-          updateCamera();
+          if (cameraShake.intensity > 0) cameraShake.intensity *= Math.pow(0.9, dt60);
+          updateCamera(dt);
           return;
         }
 
@@ -1434,16 +1441,20 @@
         lastSteerDir = steerDir;
 
         if (isSteering) {
-          turnDuration++; // Count frames
+          turnDuration += dt;
         } else {
           turnDuration = 0;
         }
 
-        // Normalize duration 0.0 to 1.0 (0s to 2s)
+        // Normalize duration 0.0 to 1.0 (0s to spinOutThreshold seconds)
         let turnRatio = Math.min(
           turnDuration / CONFIG.physics.spinOutThreshold,
           1.0,
         );
+        if (turnRatio >= 1.0) {
+          isSpinningOut = true;
+          spinOutTimer = 2; // seconds of spin-out
+        }
 
         // Turn Angle Calculation: With Up = full curve; without Up = gentler; Down+steer = +45° to limit
         let angleMagnitude = 1.6 * Math.pow(turnRatio, 1.2);
@@ -1473,13 +1484,13 @@
               ? CONFIG.physics.carveTurnInterpolation
               : 0.25
             : 0.15;
-        playerAngle += (targetAngle - playerAngle) * interpolationSpeed;
+        playerAngle += (targetAngle - playerAngle) * interpolationSpeed * dt60;
 
         // Long hold (2s): brake toward min speed, but never full stop
         let stopDrift = false;
         if (turnRatio >= 1.0) {
           stopDrift = true;
-          speed *= 0.98;
+          speed *= Math.pow(0.98, dt60);
         }
 
         // --- SPEED & FRICTION ---
@@ -1511,21 +1522,23 @@
         const boostSpeed = CONFIG.physics.boostSpeed;
         if (playerStats.boostTimer > 0) {
           const target = playerStats.boostTargetSpeed || boostSpeed;
-          speed += (target - speed) * 0.12;
+          speed += (target - speed) * 0.12 * dt60;
           speed = Math.min(speed, target);
-          playerStats.boostTimer--;
+          playerStats.boostTimer -= dt;
         } else if (speed > CONFIG.physics.maxSpeed) {
-          speed *= 0.99; // Decay boost after timer ends
+          speed *= Math.pow(0.99, dt60); // Decay boost after timer ends
         } else {
-          speed += accel;
+          speed += accel * dt60;
 
           // Friction: Up = carve (lose less); Down = smooth brake to 1; else gentle decay, floor 30%
           if (isSteering) {
             if (input.up) {
-              speed *=
+              speed *= Math.pow(
                 CONFIG.physics.carveFriction != null
                   ? CONFIG.physics.carveFriction
-                  : 0.985;
+                  : 0.985,
+                dt60,
+              );
               // Cap speed at 60% when carving (ceiling, not floor) - prevents speed increase
               const carveMax =
                 CONFIG.physics.maxSpeed *
@@ -1542,13 +1555,15 @@
                 CONFIG.physics.steerDownMinSpeed != null
                   ? CONFIG.physics.steerDownMinSpeed
                   : 0.01;
-              speed *= downFric;
+              speed *= Math.pow(downFric, dt60);
               if (speed < downMin) speed = downMin;
             } else {
-              speed *=
+              speed *= Math.pow(
                 CONFIG.physics.steerNoUpFriction != null
                   ? CONFIG.physics.steerNoUpFriction
-                  : 0.997;
+                  : 0.997,
+                dt60,
+              );
               // Cap speed at 75% when steering only (left/right without Up/Down)
               const steerOnlyMax =
                 CONFIG.physics.maxSpeed *
@@ -1566,7 +1581,7 @@
                 CONFIG.physics.straightLineFriction != null
                   ? CONFIG.physics.straightLineFriction
                   : 0.997;
-              speed *= straightFric;
+              speed *= Math.pow(straightFric, dt60);
             }
           }
 
@@ -1588,7 +1603,7 @@
         const halfWidth = CONFIG.world.playAreaWidth / 2;
         const margin = CONFIG.world.obstacleZoneMargin || 8;
         if (Math.abs(playerGroup.position.x) > halfWidth - margin) {
-          speed *= 0.97;
+          speed *= Math.pow(0.97, dt60);
         }
 
         // --- VELOCITY (drift forward + sideways from speed and facing) ---
@@ -1602,8 +1617,8 @@
         playerVelocity.z = speed * facingDirZ;
         playerVelocity.x = speed * facingDirX;
 
-        playerGroup.position.x += playerVelocity.x;
-        playerGroup.position.z += playerVelocity.z;
+        playerGroup.position.x += playerVelocity.x * dt60;
+        playerGroup.position.z += playerVelocity.z * dt60;
 
         if (playerGroup.position.x < -halfWidth)
           playerGroup.position.x = -halfWidth;
@@ -1622,7 +1637,7 @@
             ? playerMeshContainer.userData.leanBack
             : 0;
         playerMeshContainer.userData.leanBack =
-          leanBack + (leanBackTarget - leanBack) * 0.12;
+          leanBack + (leanBackTarget - leanBack) * 0.12 * dt60;
         playerMeshContainer.rotation.x = playerMeshContainer.userData.leanBack;
         playerMeshContainer.rotation.y = playerAngle;
         playerMeshContainer.rotation.z = -playerAngle * 0.3;
@@ -1630,7 +1645,7 @@
         // --- DYNAMITE ---
         if (playerStats.hasDynamite) {
           if (isSteering) playerStats.dynamiteJumpCount = 0;
-          playerStats.dynamiteTimer--;
+          playerStats.dynamiteTimer -= dt;
           if (playerStats.dynamiteTimer <= 0) {
             playerStats.hasDynamite = false;
             dynamiteMesh.visible = false;
@@ -1641,9 +1656,9 @@
             triggerNotification("BOOM!", "#ff0000");
             for (let i = 0; i < 30; i++) {
               const v = new THREE.Vector3(
-                (Math.random() - 0.5) * 2,
-                Math.random() * 2,
-                (Math.random() - 0.5) * 2,
+                (Math.random() - 0.5) * 2 * REF_FPS,
+                (Math.random() * 2) * REF_FPS,
+                (Math.random() - 0.5) * 2 * REF_FPS,
               );
               createSnowParticle(playerGroup.position, v, 0xff0000);
             }
@@ -1652,34 +1667,34 @@
             dynamiteMesh.getWorldPosition(dynWorld);
             createDynamiteSpark(dynWorld);
             if (Math.random() < 0.5) createDynamiteSpark(dynWorld);
-            if (playerStats.dynamiteTimer % 60 === 59) triggerDynamiteFlash();
-            if (playerStats.dynamiteTimer % 60 === 0)
-              triggerNotification(
-                Math.ceil(playerStats.dynamiteTimer / 60) + "...",
-                "#ff0000",
-              );
+            const secLeft = Math.ceil(playerStats.dynamiteTimer);
+            if (secLeft > 0 && secLeft !== (playerStats._lastDynamiteSecShown || 0)) {
+              triggerDynamiteFlash();
+              triggerNotification(secLeft + "...", "#ff0000");
+              playerStats._lastDynamiteSecShown = secLeft;
+            }
           }
         }
 
         // --- INVINCIBILITY ---
         if (playerStats.invincibleTimer > 0) {
-          playerStats.invincibleTimer--;
-          shieldMesh.rotation.y += 0.1;
-          const pulseFrames = shieldMesh.userData.pulseFrames || 0;
-          if (pulseFrames > 0) {
-            shieldMesh.scale.setScalar(1 + 0.3 * (pulseFrames / 15));
-            shieldMesh.userData.pulseFrames = pulseFrames - 1;
+          playerStats.invincibleTimer -= dt;
+          shieldMesh.rotation.y += 0.1 * dt60;
+          const pulseTime = shieldMesh.userData.pulseTime != null ? shieldMesh.userData.pulseTime : 0;
+          if (pulseTime > 0) {
+            shieldMesh.scale.setScalar(1 + 0.3 * (pulseTime / 0.25));
+            shieldMesh.userData.pulseTime = Math.max(0, pulseTime - dt);
           } else {
             shieldMesh.scale.setScalar(1);
           }
-          // Flicker from 5s to 2s left (300–120 frames); dim from 2s to 0s (120–0 frames)
+          // Flicker from 5s to 2s left; dim from 2s to 0s left
           const t = playerStats.invincibleTimer;
           let baseOpacity = 0.3;
-          if (t <= 120) {
-            baseOpacity = (t / 120) * 0.3; // Dim between 2s and 0s left
-          } else if (t <= 300) {
+          if (t <= 2) {
+            baseOpacity = (t / 2) * 0.3; // Dim between 2s and 0s left
+          } else if (t <= 5) {
             const phase = shieldMesh.userData.shieldFlickerPhase || 0;
-            shieldMesh.userData.shieldFlickerPhase = phase + 0.2;
+            shieldMesh.userData.shieldFlickerPhase = phase + 0.2 * dt60;
             baseOpacity *= 0.7 + 0.3 * Math.sin(phase);
             baseOpacity = Math.max(0.05, baseOpacity); // Flicker between 5s and 2s left
           }
@@ -1691,16 +1706,19 @@
         }
 
         // --- BOOST TRAIL (glowing skid marks while boosting, on ground) ---
+        const boostTrailInterval = 4 / REF_FPS; // seconds (was every 4 frames)
         if (
           playerStats.boostTimer > 0 &&
           !playerStats.isJumping &&
           speed > 0.1
         ) {
-          boostTrailSpawnCounter++;
-          if (boostTrailSpawnCounter % 4 === 0)
+          boostTrailSpawnAccum += dt;
+          while (boostTrailSpawnAccum >= boostTrailInterval) {
             createBoostTrailMark(playerGroup.position.clone());
+            boostTrailSpawnAccum -= boostTrailInterval;
+          }
         } else {
-          boostTrailSpawnCounter = 0;
+          boostTrailSpawnAccum = 0;
         }
 
         // --- JUMPING (one jump per press; holding Space = single high jump) ---
@@ -1709,14 +1727,14 @@
           playerStats.didJumpThisAirtime = true;
           playerStats.rampLaunchFramesAgo = null;
           playerStats.canRampAssistJump = false;
-          playerVelocity.y = CONFIG.physics.jumpForce;
+          playerVelocity.y = CONFIG.physics.jumpForce * REF_FPS; // per-second
           input.jump = false; // Consume so holding Space does not repeat jump
         }
         // Ramp assist: tap Space once while in the air after a ramp for a smooth extra boost (reaches elevated box)
         const assistWindow =
           CONFIG.physics.rampAssistWindow != null
             ? CONFIG.physics.rampAssistWindow
-            : 50;
+            : 50 / 60;
         const assistBoost =
           CONFIG.physics.rampAssistBoost != null
             ? CONFIG.physics.rampAssistBoost
@@ -1728,16 +1746,16 @@
           playerStats.rampLaunchFramesAgo != null &&
           playerStats.rampLaunchFramesAgo < assistWindow
         ) {
-          playerVelocity.y += assistBoost;
+          playerVelocity.y += assistBoost * REF_FPS; // per-second
           playerStats.didJumpThisAirtime = true;
           playerStats.canRampAssistJump = false;
           input.jump = false; // Consume so one assist per press
         }
         if (playerStats.isJumping) {
           if (playerStats.rampLaunchFramesAgo != null)
-            playerStats.rampLaunchFramesAgo++;
-          playerGroup.position.y += playerVelocity.y;
-          playerVelocity.y -= CONFIG.physics.gravity;
+            playerStats.rampLaunchFramesAgo += dt;
+          playerGroup.position.y += playerVelocity.y * dt;
+          playerVelocity.y -= CONFIG.physics.gravity * REF_FPS * REF_FPS * dt; // gravity was per-frame, so accel = gravity * REF_FPS^2 units/s^2
           if (playerGroup.position.y <= 0) {
             playerGroup.position.y = 0;
             playerStats.isJumping = false;
@@ -1770,14 +1788,14 @@
           );
           const sprayPos = playerGroup.position.clone().add(offset);
           const v = new THREE.Vector3(
-            (Math.random() - 0.5) * 0.2,
-            Math.random() * 0.2,
-            (Math.random() - 0.5) * 0.2,
+            (Math.random() - 0.5) * 0.2 * REF_FPS,
+            Math.random() * 0.2 * REF_FPS,
+            (Math.random() - 0.5) * 0.2 * REF_FPS,
           );
           createSnowParticle(sprayPos, v);
         }
 
-        score += Math.abs(playerVelocity.z);
+        score += Math.abs(playerVelocity.z) * dt60;
         scoreVal.innerText = Math.floor(score);
         speedVal.innerText = Math.floor(speed * 100);
 
@@ -1785,7 +1803,7 @@
         ground.position.x = playerGroup.position.x;
       }
 
-      function updateObstacles() {
+      function updateObstacles(dt) {
         const lastZ =
           obstacles.length > 0
             ? obstacles[obstacles.length - 1].position.z
@@ -1797,20 +1815,20 @@
         for (let i = obstacles.length - 1; i >= 0; i--) {
           const ob = obstacles[i];
           if (ob.userData.type === "box") {
-            ob.rotation.x += 0.02;
-            ob.rotation.y += 0.03;
+            ob.rotation.x += 0.02 * dt * REF_FPS;
+            ob.rotation.y += 0.03 * dt * REF_FPS;
           }
           if (ob.userData.type === "boost" && ob.userData.arrowMesh) {
             const arrow = ob.userData.arrowMesh;
             const arrow2 = ob.userData.arrowMesh2;
             // Slower, smoother phase increment for opacity pulse
-            ob.userData.arrowPhase = (ob.userData.arrowPhase || 0) + 0.04;
+            ob.userData.arrowPhase = (ob.userData.arrowPhase || 0) + 0.04 * dt * REF_FPS;
             // Slower slide forward (toward -Z, direction of travel)
             // Pad is 6 units long (from -3 to +3), keep arrows within -2.5 to +2.5
-            arrow.position.z -= 0.04;
+            arrow.position.z -= 0.04 * dt * REF_FPS;
             if (arrow.position.z < -2.5) arrow.position.z += 5; // Wrap smoothly within pad bounds
             if (arrow2) {
-              arrow2.position.z -= 0.04;
+              arrow2.position.z -= 0.04 * dt * REF_FPS;
               if (arrow2.position.z < -2.5) arrow2.position.z += 5;
             }
             // Smoother opacity pulse
@@ -1840,7 +1858,7 @@
                 playerStats.didJumpThisAirtime = false;
                 playerStats.rampLaunchFramesAgo = 0;
                 playerStats.canRampAssistJump = true;
-                playerVelocity.y = CONFIG.physics.rampForce;
+                playerVelocity.y = CONFIG.physics.rampForce * REF_FPS; // per-second
                 triggerNotification("Sweet! That's an AIR TIME!");
               } else if (ob.userData.type === "box") {
                 const isElevated = ob.userData.isElevated;
@@ -1858,7 +1876,7 @@
                     }
                   } else {
                     breakBox(ob);
-                    playerVelocity.y = 0.2; // Bounce
+                    playerVelocity.y = 0.2 * REF_FPS; // Bounce (per-second)
                   }
                 } else {
                   if (isElevated) {
@@ -1884,7 +1902,7 @@
                     speed *= 0.5;
                     shakeCamera();
                     playerGroup.position.y += 0.2;
-                    shieldMesh.userData.pulseFrames = 15;
+                    shieldMesh.userData.pulseTime = 15 / REF_FPS; // 0.25 s
                     triggerNotification("SHIELD!", "#00ffff");
                   } else {
                     takeDamage(20);
@@ -1896,12 +1914,13 @@
         }
       }
 
-      function updateParticles() {
-        // Snow
+      function updateParticles(dt) {
+        const dt60 = dt * REF_FPS;
+        // Snow (velocity is per-second)
         for (let i = particles.length - 1; i >= 0; i--) {
           const p = particles[i];
-          p.life -= 0.05;
-          p.mesh.position.add(p.velocity);
+          p.life -= 0.05 * dt60;
+          p.mesh.position.addScaledVector(p.velocity, dt);
           p.mesh.scale.setScalar(p.life);
           if (p.life <= 0) {
             scene.remove(p.mesh);
@@ -1911,8 +1930,8 @@
         // Effects
         for (let i = effects.length - 1; i >= 0; i--) {
           const e = effects[i];
-          e.scale += 0.2;
-          e.opacity -= 0.05;
+          e.scale += 0.2 * dt60;
+          e.opacity -= 0.05 * dt60;
           e.mesh.scale.set(e.scale, e.scale, 1);
           e.mesh.material.opacity = e.opacity;
           if (e.opacity <= 0) {
@@ -1923,18 +1942,18 @@
         // Boost trail (glowing skid marks fade out)
         for (let i = boostTrail.length - 1; i >= 0; i--) {
           const mark = boostTrail[i];
-          mark.life -= 0.02;
+          mark.life -= 0.02 * dt60;
           mark.mesh.material.opacity = mark.life * 0.7;
           if (mark.life <= 0) {
             scene.remove(mark.mesh);
             boostTrail.splice(i, 1);
           }
         }
-        // Dynamite sparks
+        // Dynamite sparks (velocity is per-second)
         for (let i = dynamiteSparks.length - 1; i >= 0; i--) {
           const s = dynamiteSparks[i];
-          s.life -= 0.08;
-          s.mesh.position.add(s.velocity);
+          s.life -= 0.08 * dt60;
+          s.mesh.position.addScaledVector(s.velocity, dt);
           s.mesh.material.opacity = s.life;
           if (s.life <= 0) {
             scene.remove(s.mesh);
@@ -1943,7 +1962,7 @@
         }
       }
 
-      function updateCamera() {
+      function updateCamera(dt) {
         const targetX = playerGroup.position.x;
         const targetZ = playerGroup.position.z + 8;
         let shakeX = 0,
@@ -1951,10 +1970,10 @@
         if (cameraShake.intensity > 0) {
           shakeX = (Math.random() - 0.5) * cameraShake.intensity;
           shakeY = (Math.random() - 0.5) * cameraShake.intensity;
-          cameraShake.intensity *= 0.9;
+          cameraShake.intensity *= Math.pow(0.9, dt * REF_FPS);
           if (cameraShake.intensity < 0.01) cameraShake.intensity = 0;
         }
-        camera.position.x += (targetX - camera.position.x) * 0.1 + shakeX;
+        camera.position.x += (targetX - camera.position.x) * 0.1 * dt * REF_FPS + shakeX;
         camera.position.z = targetZ;
         camera.position.y = playerGroup.position.y + 5 + shakeY;
         camera.lookAt(
@@ -1989,15 +2008,19 @@
       function animate() {
         frameId = requestAnimationFrame(animate);
         if (!renderer || !scene || !camera) return;
+        const now = performance.now();
+        let dt = lastFrameTime > 0 ? (now - lastFrameTime) / 1000 : 1 / REF_FPS;
+        dt = Math.min(dt, DT_MAX);
+        lastFrameTime = now;
         if (gameState === "PAUSED") {
           renderer.render(scene, camera);
           return;
         }
         if (gameState === "PLAYING" || isSpinningOut) {
-          updatePhysics();
-          updateObstacles();
-          updateParticles();
-          updateCamera();
+          updatePhysics(dt);
+          updateObstacles(dt);
+          updateParticles(dt);
+          updateCamera(dt);
         }
         renderer.render(scene, camera);
       }
