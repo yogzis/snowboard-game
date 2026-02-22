@@ -109,8 +109,8 @@
       /* Jump charge bar: vertical, right of character, visible while holding */
       #jump-charge-container {
         position: absolute;
-        right: 18%;
-        top: 50%;
+        right: 40%;
+        top: 60%;
         transform: translateY(-50%);
         width: 28px;
         height: 200px;
@@ -748,8 +748,8 @@
           straightLineFriction: 0.997, // Going straight: very gentle decay (smooth coast)
           gravity: 0.02,
           jumpForceShort: 0.22, // Min force at zero charge (tap)
-          jumpChargeDurationMs: 400, // Time from keydown to full charge
-          jumpForceMax: 0.58, // Max force at full charge (smooth, no timing gate)
+          jumpChargeDurationMs: 600, // Time from keydown to full charge
+          jumpForceMax: 0.5, // Max force at full charge (smooth, no timing gate)
           rampForce: 0.4, // Lower so elevated box needs a timed jump (Space) to reach
           rampAssistWindow: 50 / 60, // Seconds after ramp to tap Space for smooth assisted jump (~0.833s)
           rampAssistBoost: 0.32, // Extra upward boost when tapping Space in air after ramp
@@ -2211,7 +2211,9 @@
         if (e.key === "ArrowRight") input.right = true;
         if (e.key === "ArrowUp") input.up = true;
         if (e.key === "ArrowDown") input.down = true;
-        if (e.key === " ") jumpPressStartedAt = performance.now();
+        if (e.key === " ")
+          if (jumpPressStartedAt == null)
+            jumpPressStartedAt = performance.now();
         if (e.key === "Escape") {
           if (hintsOverlay && !hintsOverlay.classList.contains("hidden")) {
             hintsOverlay.classList.add("hidden");
@@ -2242,7 +2244,8 @@
           const w = window.innerWidth;
           if (x < w * 0.3) input.left = true;
           else if (x > w * 0.7) input.right = true;
-          else jumpPressStartedAt = performance.now();
+          else if (jumpPressStartedAt == null)
+            jumpPressStartedAt = performance.now();
         }
       }
       function onTouchEnd(e) {
