@@ -267,7 +267,6 @@
         font-size: 1.35em;
         display: block;
         margin-top: 2px;
-        
       }
       #menu-overlay p.subtitle {
         color: #fff;
@@ -435,9 +434,15 @@
         animation: dynamite-flash 0.35s ease-out forwards;
       }
       @keyframes dynamite-flash {
-        0% { background: rgba(255, 0, 0, 0); }
-        30% { background: rgba(255, 0, 0, 0.4); }
-        100% { background: rgba(255, 0, 0, 0); }
+        0% {
+          background: rgba(255, 0, 0, 0);
+        }
+        30% {
+          background: rgba(255, 0, 0, 0.4);
+        }
+        100% {
+          background: rgba(255, 0, 0, 0);
+        }
       }
 
       /* In-game confirm dialog */
@@ -541,18 +546,48 @@
     </div>
 
     <!-- Hints overlay (How to Play) -->
-    <div id="hints-overlay" class="overlay-menu hidden" aria-label="How to Play">
+    <div
+      id="hints-overlay"
+      class="overlay-menu hidden"
+      aria-label="How to Play"
+    >
       <h2>How to Play</h2>
       <div id="hints-content" class="hints-content">
         <section class="hints-section">
           <h3>Controls</h3>
           <div class="controls-hint hints-controls">
             <table>
-              <tr><td class="key-icon">⬅️ ➡️</td><td class="control-divider">|</td><td class="control-desc">Steer (curve intensity increases with hold)</td></tr>
-              <tr><td class="key-icon">⬆️</td><td class="control-divider">|</td><td class="control-desc">Lean forward + steer = controlled turn</td></tr>
-              <tr><td class="key-icon">⬇️</td><td class="control-divider">|</td><td class="control-desc">Lean back = speed up; with steer = brake</td></tr>
-              <tr><td class="key-icon">␣ Space</td><td class="control-divider">|</td><td class="control-desc">Jump (one jump per press)</td></tr>
-              <tr><td class="key-icon">Esc</td><td class="control-divider">|</td><td class="control-desc">Pause / Resume</td></tr>
+              <tr>
+                <td class="key-icon">⬅️ ➡️</td>
+                <td class="control-divider">|</td>
+                <td class="control-desc">
+                  Steer (curve intensity increases with hold)
+                </td>
+              </tr>
+              <tr>
+                <td class="key-icon">⬆️</td>
+                <td class="control-divider">|</td>
+                <td class="control-desc">
+                  Lean forward + steer = controlled turn
+                </td>
+              </tr>
+              <tr>
+                <td class="key-icon">⬇️</td>
+                <td class="control-divider">|</td>
+                <td class="control-desc">
+                  Lean back = speed up; with steer = brake
+                </td>
+              </tr>
+              <tr>
+                <td class="key-icon">␣ Space</td>
+                <td class="control-divider">|</td>
+                <td class="control-desc">Jump (one jump per press)</td>
+              </tr>
+              <tr>
+                <td class="key-icon">Esc</td>
+                <td class="control-divider">|</td>
+                <td class="control-desc">Pause / Resume</td>
+              </tr>
             </table>
           </div>
         </section>
@@ -568,23 +603,42 @@
         </section>
         <section class="hints-section">
           <h3>Jumping</h3>
-          <p>One jump per Space press. Ramps launch you into the air; tap Space again in the air after a ramp for an extra boost to reach elevated boxes.</p>
+          <p>
+            One jump per Space press. Ramps launch you into the air; tap Space
+            again in the air after a ramp for an extra boost to reach elevated
+            boxes.
+          </p>
         </section>
         <section class="hints-section">
           <h3>Obstacles</h3>
-          <p>Trees and rocks: 20 damage and 50% speed loss on hit. Ramps: hit them to get launched for air time.</p>
+          <p>
+            Trees and rocks: 20 damage and 50% speed loss on hit. Ramps: hit
+            them to get launched for air time.
+          </p>
         </section>
         <section class="hints-section">
           <h3>Mystery boxes</h3>
-          <p>Jump on boxes for rewards. Standard boxes are floating; elevated boxes (often after ramps) need a ramp launch plus a Space tap in the air to reach. Hitting a box from the side removes it without a reward.</p>
+          <p>
+            Jump on boxes for rewards. Standard boxes are floating; elevated
+            boxes (often after ramps) need a ramp launch plus a Space tap in the
+            air to reach. Hitting a box from the side removes it without a
+            reward.
+          </p>
         </section>
         <section class="hints-section">
           <h3>Rewards</h3>
-          <p>Speed boost, HP refill, extra life or full heal, and a temporary shield (invincibility).</p>
+          <p>
+            Speed boost, HP refill, extra life or full heal, and a temporary
+            shield (invincibility).
+          </p>
         </section>
         <section class="hints-section">
           <h3>Dynamite (trap)</h3>
-          <p>Some boxes give dynamite: a chain timer (~5 s), then 50 damage. To disarm, jump twice in a row without steering (no Left/Right input) to detach before it explodes.</p>
+          <p>
+            Some boxes give dynamite: a chain timer (~5 s), then 50 damage. To
+            disarm, jump twice in a row without steering (no Left/Right input)
+            to detach before it explodes.
+          </p>
         </section>
       </div>
       <div class="hints-actions">
@@ -594,7 +648,11 @@
     </div>
 
     <!-- Dynamite countdown red flash (semi-transparent, slope stays visible) -->
-    <div id="dynamite-flash" class="dynamite-flash-overlay" aria-hidden="true"></div>
+    <div
+      id="dynamite-flash"
+      class="dynamite-flash-overlay"
+      aria-hidden="true"
+    ></div>
 
     <!-- Exit confirm (in-game UI) -->
     <div id="exit-confirm" class="confirm-overlay hidden">
@@ -692,6 +750,7 @@
       let playerVelocity = { x: 0, y: 0, z: 0 };
       let playerAngle = 0;
       let turnDuration = 0; // Seconds key is held
+      let steerOnlyDuration = 0; // Seconds steering without Up/Down (for spin-out only)
       let lastSteerDir = 0; // -1 right, 1 left, 0 none (detect flip to avoid brake when straightening)
       let isSpinningOut = false;
       let spinOutTimer = 0; // Seconds remaining
@@ -1069,7 +1128,7 @@
           arrowMesh.position.y = 0.08; // Above the pad plane (pad is at 0.05)
           arrowMesh.position.z = 0; // Start at center, will animate sliding forward
           padGroup.add(arrowMesh);
-          
+
           // Add a second arrow offset for better visibility
           const arrowMesh2 = new THREE.Mesh(arrowGeo, arrowMat.clone());
           arrowMesh2.scale.set(4, 4, 4);
@@ -1077,7 +1136,7 @@
           arrowMesh2.position.y = 0.08;
           arrowMesh2.position.z = -1.2; // Offset behind first arrow (within pad bounds)
           padGroup.add(arrowMesh2);
-          
+
           padGroup.userData = {
             radius: 1.5,
             type: "boost",
@@ -1313,6 +1372,7 @@
         isSpinningOut = false;
         spinOutTimer = 0;
         turnDuration = 0;
+        steerOnlyDuration = 0;
         lastSteerDir = 0;
         if (fullReset) {
           playerStats.hp = 100;
@@ -1428,7 +1488,8 @@
           playerVelocity.z = speed * -Math.cos(0);
           playerGroup.position.z += playerVelocity.z * dt60;
           playerMeshContainer.rotation.y = playerAngle;
-          if (cameraShake.intensity > 0) cameraShake.intensity *= Math.pow(0.9, dt60);
+          if (cameraShake.intensity > 0)
+            cameraShake.intensity *= Math.pow(0.9, dt60);
           updateCamera(dt);
           return;
         }
@@ -1438,6 +1499,7 @@
         const steerDir = input.left ? 1 : input.right ? -1 : 0;
         if (steerDir !== lastSteerDir && lastSteerDir !== 0) {
           turnDuration = 0; // Flipped left<->right: don't keep long-hold brake, no instant speed drop
+          steerOnlyDuration = 0;
         }
         lastSteerDir = steerDir;
 
@@ -1446,17 +1508,31 @@
         } else {
           turnDuration = 0;
         }
+        if (isSteering && !input.up && !input.down && !playerStats.isJumping) {
+          steerOnlyDuration += dt;
+        } else {
+          steerOnlyDuration = 0;
+        }
 
-        // Normalize duration 0.0 to 1.0 (0s to spinOutThreshold seconds)
+        // Spin-out only when steering without Up or Down (no control/brake)
+        let steerOnlyRatio = Math.min(
+          steerOnlyDuration / CONFIG.physics.spinOutThreshold,
+          1.0,
+        );
+        if (steerOnlyRatio >= 1.0) {
+          isSpinningOut = true;
+          spinOutTimer = CONFIG.physics.spinOutDuration ?? 1; // seconds of spin-out
+          triggerNotification(
+            "Hold a turn too long (~1.5 s) and you spin out.",
+            "#e67e22",
+          );
+        }
+
+        // Normalize duration 0.0 to 1.0 (0s to spinOutThreshold seconds) for turn angle
         let turnRatio = Math.min(
           turnDuration / CONFIG.physics.spinOutThreshold,
           1.0,
         );
-        if (turnRatio >= 1.0) {
-          isSpinningOut = true;
-          spinOutTimer = CONFIG.physics.spinOutDuration ?? 1; // seconds of spin-out
-          triggerNotification("Hold a turn too long (~1.5 s) and you spin out.", "#e67e22");
-        }
 
         // Turn Angle Calculation: With Up = full curve; without Up = gentler; Down+steer = +45° to limit
         let angleMagnitude = 1.6 * Math.pow(turnRatio, 1.2);
@@ -1654,12 +1730,16 @@
             dynamiteSparks.forEach((s) => scene.remove(s.mesh));
             dynamiteSparks.length = 0;
             triggerDynamiteFlash();
-            takeDamage(CONFIG.game.dynamiteDamage != null ? CONFIG.game.dynamiteDamage : 85);
+            takeDamage(
+              CONFIG.game.dynamiteDamage != null
+                ? CONFIG.game.dynamiteDamage
+                : 85,
+            );
             triggerNotification("BOOM!", "#ff0000");
             for (let i = 0; i < 30; i++) {
               const v = new THREE.Vector3(
                 (Math.random() - 0.5) * 2 * REF_FPS,
-                (Math.random() * 2) * REF_FPS,
+                Math.random() * 2 * REF_FPS,
                 (Math.random() - 0.5) * 2 * REF_FPS,
               );
               createSnowParticle(playerGroup.position, v, 0xff0000);
@@ -1670,7 +1750,10 @@
             createDynamiteSpark(dynWorld);
             if (Math.random() < 0.5) createDynamiteSpark(dynWorld);
             const secLeft = Math.ceil(playerStats.dynamiteTimer);
-            if (secLeft > 0 && secLeft !== (playerStats._lastDynamiteSecShown || 0)) {
+            if (
+              secLeft > 0 &&
+              secLeft !== (playerStats._lastDynamiteSecShown || 0)
+            ) {
               triggerDynamiteFlash();
               triggerNotification(secLeft + "...", "#ff0000");
               playerStats._lastDynamiteSecShown = secLeft;
@@ -1682,7 +1765,10 @@
         if (playerStats.invincibleTimer > 0) {
           playerStats.invincibleTimer -= dt;
           shieldMesh.rotation.y += 0.1 * dt60;
-          const pulseTime = shieldMesh.userData.pulseTime != null ? shieldMesh.userData.pulseTime : 0;
+          const pulseTime =
+            shieldMesh.userData.pulseTime != null
+              ? shieldMesh.userData.pulseTime
+              : 0;
           if (pulseTime > 0) {
             shieldMesh.scale.setScalar(1 + 0.3 * (pulseTime / 0.25));
             shieldMesh.userData.pulseTime = Math.max(0, pulseTime - dt);
@@ -1824,7 +1910,8 @@
             const arrow = ob.userData.arrowMesh;
             const arrow2 = ob.userData.arrowMesh2;
             // Slower, smoother phase increment for opacity pulse
-            ob.userData.arrowPhase = (ob.userData.arrowPhase || 0) + 0.04 * dt * REF_FPS;
+            ob.userData.arrowPhase =
+              (ob.userData.arrowPhase || 0) + 0.04 * dt * REF_FPS;
             // Slower slide forward (toward -Z, direction of travel)
             // Pad is 6 units long (from -3 to +3), keep arrows within -2.5 to +2.5
             arrow.position.z -= 0.04 * dt * REF_FPS;
@@ -1836,7 +1923,8 @@
             // Smoother opacity pulse
             const opacity = 0.65 + 0.35 * Math.sin(ob.userData.arrowPhase);
             arrow.material.opacity = Math.max(0.5, Math.min(1, opacity));
-            if (arrow2) arrow2.material.opacity = Math.max(0.5, Math.min(1, opacity));
+            if (arrow2)
+              arrow2.material.opacity = Math.max(0.5, Math.min(1, opacity));
           }
 
           if (ob.position.z > playerGroup.position.z + 10) {
@@ -1878,7 +1966,7 @@
                     }
                   } else {
                     breakBox(ob);
-                    playerVelocity.y = 0.2 * REF_FPS; // Bounce (per-second)
+                    playerVelocity.y = 0.3 * REF_FPS; // Bounce (per-second)
                   }
                 } else {
                   if (isElevated) {
@@ -1975,7 +2063,8 @@
           cameraShake.intensity *= Math.pow(0.9, dt * REF_FPS);
           if (cameraShake.intensity < 0.01) cameraShake.intensity = 0;
         }
-        camera.position.x += (targetX - camera.position.x) * 0.1 * dt * REF_FPS + shakeX;
+        camera.position.x +=
+          (targetX - camera.position.x) * 0.1 * dt * REF_FPS + shakeX;
         camera.position.z = targetZ;
         camera.position.y = playerGroup.position.y + 5 + shakeY;
         camera.lookAt(
