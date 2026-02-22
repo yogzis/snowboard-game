@@ -563,7 +563,7 @@
             <li>Down + steer brakes smoothly to 1 km/h.</li>
             <li>Down alone increases speed.</li>
             <li>Steering only (no Up/Down) caps at 75% with a slide feel.</li>
-            <li>Hold a turn too long (~2 s) and you spin out.</li>
+            <li>Hold a turn too long (~1.5 s) and you spin out.</li>
           </ul>
         </section>
         <section class="hints-section">
@@ -655,7 +655,8 @@
           rampForce: 0.4, // Lower so elevated box needs a timed jump (Space) to reach
           rampAssistWindow: 50 / 60, // Seconds after ramp to tap Space for smooth assisted jump (~0.833s)
           rampAssistBoost: 0.32, // Extra upward boost when tapping Space in air after ramp
-          spinOutThreshold: 2, // Seconds holding turn before spin-out
+          spinOutThreshold: 1.5, // Seconds holding turn before spin-out
+          spinOutDuration: 1, // Seconds of spin-out (was 2; halved to keep flow)
         },
         game: {
           maxHP: 100,
@@ -1453,7 +1454,8 @@
         );
         if (turnRatio >= 1.0) {
           isSpinningOut = true;
-          spinOutTimer = 2; // seconds of spin-out
+          spinOutTimer = CONFIG.physics.spinOutDuration ?? 1; // seconds of spin-out
+          triggerNotification("Hold a turn too long (~1.5 s) and you spin out.", "#e67e22");
         }
 
         // Turn Angle Calculation: With Up = full curve; without Up = gentler; Down+steer = +45° to limit
