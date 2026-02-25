@@ -21,6 +21,7 @@ import "@babylonjs/loaders/glTF";
 import { CONFIG } from "../config.js";
 
 let environmentHelper = null;
+let skyboxMesh = null;
 let shadowGenerator = null;
 
 /** Generate a procedural heightmap buffer for moguls (repeating bumps along Z with variation). */
@@ -34,7 +35,9 @@ function createMogulHeightMapBuffer(width, height) {
     for (let x = 0; x < width; x++) {
       const u = x / (width - 1);
       const v = y / (height - 1);
-      const bump = Math.sin(v * Math.PI * 2 * 12) * 0.5 + Math.sin(u * Math.PI * 2 * 4) * 0.2;
+      const bump =
+        Math.sin(v * Math.PI * 2 * 12) * 0.5 +
+        Math.sin(u * Math.PI * 2 * 4) * 0.2;
       const h = 0.5 + mogulScale * bump + (Math.random() - 0.5) * 0.05;
       const byte = Math.max(0, Math.min(255, Math.floor(h * 255)));
       const i = (y * width + x) * 4;
@@ -72,7 +75,11 @@ let dynamiteSparkIdToMesh = new Map();
 function createProceduralPlayer(scene, container) {
   const meshes = [];
 
-  const board = MeshBuilder.CreateBox("board", { width: 0.6, height: 0.1, depth: 2.2 }, scene);
+  const board = MeshBuilder.CreateBox(
+    "board",
+    { width: 0.6, height: 0.1, depth: 2.2 },
+    scene,
+  );
   board.position.y = 0.05;
   board.material = new StandardMaterial("boardMat", scene);
   board.material.diffuseColor = hexToColor3(0x333333);
@@ -82,13 +89,21 @@ function createProceduralPlayer(scene, container) {
 
   const legMat = new StandardMaterial("legMat", scene);
   legMat.diffuseColor = hexToColor3(CONFIG.colors.pants);
-  const leftLeg = MeshBuilder.CreateCylinder("leftLeg", { height: 0.8, diameter: 0.3, tessellation: 8 }, scene);
+  const leftLeg = MeshBuilder.CreateCylinder(
+    "leftLeg",
+    { height: 0.8, diameter: 0.3, tessellation: 8 },
+    scene,
+  );
   leftLeg.position.set(-0.2, 0.5, 0.3);
   leftLeg.rotation.x = -0.2;
   leftLeg.material = legMat;
   leftLeg.parent = container;
   meshes.push(leftLeg);
-  const rightLeg = MeshBuilder.CreateCylinder("rightLeg", { height: 0.8, diameter: 0.3, tessellation: 8 }, scene);
+  const rightLeg = MeshBuilder.CreateCylinder(
+    "rightLeg",
+    { height: 0.8, diameter: 0.3, tessellation: 8 },
+    scene,
+  );
   rightLeg.position.set(0.2, 0.5, -0.3);
   rightLeg.rotation.x = 0.2;
   rightLeg.material = legMat;
@@ -97,7 +112,11 @@ function createProceduralPlayer(scene, container) {
 
   const torsoMat = new StandardMaterial("torsoMat", scene);
   torsoMat.diffuseColor = hexToColor3(CONFIG.colors.jacket);
-  const torso = MeshBuilder.CreateBox("torso", { width: 0.7, height: 0.9, depth: 0.5 }, scene);
+  const torso = MeshBuilder.CreateBox(
+    "torso",
+    { width: 0.7, height: 0.9, depth: 0.5 },
+    scene,
+  );
   torso.position.set(0, 1.1, 0);
   torso.material = torsoMat;
   torso.parent = container;
@@ -105,7 +124,11 @@ function createProceduralPlayer(scene, container) {
 
   const bagMat = new StandardMaterial("bagMat", scene);
   bagMat.diffuseColor = hexToColor3(CONFIG.colors.backpack);
-  const bag = MeshBuilder.CreateBox("bag", { width: 0.5, height: 0.6, depth: 0.3 }, scene);
+  const bag = MeshBuilder.CreateBox(
+    "bag",
+    { width: 0.5, height: 0.6, depth: 0.3 },
+    scene,
+  );
   bag.position.set(0, 1.2, 0.35);
   bag.material = bagMat;
   bag.parent = container;
@@ -122,13 +145,21 @@ function createProceduralPlayer(scene, container) {
   const goggleMat = new StandardMaterial("goggleMat", scene);
   goggleMat.diffuseColor = hexToColor3(CONFIG.colors.goggles);
   goggleMat.specularPower = 100;
-  const goggles = MeshBuilder.CreateBox("goggles", { width: 0.35, height: 0.15, depth: 0.1 }, scene);
+  const goggles = MeshBuilder.CreateBox(
+    "goggles",
+    { width: 0.35, height: 0.15, depth: 0.1 },
+    scene,
+  );
   goggles.position.set(0, 1.7, -0.22);
   goggles.material = goggleMat;
   goggles.parent = container;
   meshes.push(goggles);
 
-  const armGeo = MeshBuilder.CreateCylinder("arm", { height: 0.7, diameter: 0.2, tessellation: 8 }, scene);
+  const armGeo = MeshBuilder.CreateCylinder(
+    "arm",
+    { height: 0.7, diameter: 0.2, tessellation: 8 },
+    scene,
+  );
   const leftArm = armGeo.clone("leftArm");
   leftArm.position.set(-0.45, 1.2, 0);
   leftArm.rotation.z = 0.5;
@@ -167,16 +198,24 @@ function createPlayerVisual(scene) {
   shield.isVisible = false;
   shield.parent = container;
 
-  const dynStick = MeshBuilder.CreateCylinder("dynStick", { height: 0.6, diameter: 0.2, tessellation: 16 }, scene);
+  const dynStick = MeshBuilder.CreateCylinder(
+    "dynStick",
+    { height: 0.6, diameter: 0.2, tessellation: 16 },
+    scene,
+  );
   dynStick.rotation.z = Math.PI / 2;
   const stickMat = new StandardMaterial("stickMat", scene);
-  stickMat.diffuseColor = hexToColor3(0x8B4513);
+  stickMat.diffuseColor = hexToColor3(0x8b4513);
   stickMat.specularColor = new Color3(0.2, 0.1, 0.05);
   stickMat.specularPower = 48;
   dynStick.material = stickMat;
   dynStick.receiveShadows = true;
 
-  const dynBody = MeshBuilder.CreateCylinder("dynBody", { height: 0.4, diameter: 0.18, tessellation: 12 }, scene);
+  const dynBody = MeshBuilder.CreateCylinder(
+    "dynBody",
+    { height: 0.4, diameter: 0.18, tessellation: 12 },
+    scene,
+  );
   dynBody.position.x = 0.35;
   dynBody.rotation.z = Math.PI / 2;
   const bodyMat = new StandardMaterial("dynBodyMat", scene);
@@ -187,7 +226,11 @@ function createPlayerVisual(scene) {
   dynBody.receiveShadows = true;
   dynBody.isVisible = false;
 
-  const dynFuse = MeshBuilder.CreateCylinder("dynFuse", { height: 0.25, diameter: 0.04, tessellation: 8 }, scene);
+  const dynFuse = MeshBuilder.CreateCylinder(
+    "dynFuse",
+    { height: 0.25, diameter: 0.04, tessellation: 8 },
+    scene,
+  );
   dynFuse.position.x = 0.55;
   dynFuse.rotation.z = Math.PI / 2;
   const fuseMat = new StandardMaterial("dynFuseMat", scene);
@@ -198,7 +241,11 @@ function createPlayerVisual(scene) {
   dynFuse.receiveShadows = true;
   dynFuse.isVisible = false;
 
-  const chain = MeshBuilder.CreateCylinder("chain", { height: 1, diameter: 0.04, tessellation: 10 }, scene);
+  const chain = MeshBuilder.CreateCylinder(
+    "chain",
+    { height: 1, diameter: 0.04, tessellation: 10 },
+    scene,
+  );
   chain.position.y = 0.5;
   const chainMat = new StandardMaterial("chainMat", scene);
   chainMat.diffuseColor = hexToColor3(0x555555);
@@ -219,12 +266,22 @@ function createPlayerVisual(scene) {
   dynGroup.isVisible = false;
   dynGroup.parent = container;
 
-  return { root, container, shieldMesh: shield, dynamiteMesh: dynGroup, proceduralBodyMeshes };
+  return {
+    root,
+    container,
+    shieldMesh: shield,
+    dynamiteMesh: dynGroup,
+    proceduralBodyMeshes,
+  };
 }
 
 /** Load glTF character; on success attach to container and replace procedural body. On failure or no URL, procedural stays. Uses only assets.character (never characterTest). */
 function loadCharacterModel(scene, container, proceduralBodyMeshes) {
-  const url = (typeof CONFIG.assets?.character === "string" && CONFIG.assets.character !== "") ? CONFIG.assets.character.trim() : "";
+  const url =
+    typeof CONFIG.assets?.character === "string" &&
+    CONFIG.assets.character !== ""
+      ? CONFIG.assets.character.trim()
+      : "";
   if (!url) return;
 
   const lastSlash = url.lastIndexOf("/");
@@ -237,7 +294,8 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
     SceneLoader.ImportMeshAsync(null, rootUrl, filename, scene)
       .then((result) => {
         const hasMeshes = result.meshes && result.meshes.length > 0;
-        const hasTransformNodes = result.transformNodes && result.transformNodes.length > 0;
+        const hasTransformNodes =
+          result.transformNodes && result.transformNodes.length > 0;
         if (!hasMeshes && !hasTransformNodes) return;
 
         let loaderRoot;
@@ -251,15 +309,26 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
           for (const mesh of result.meshes) addTop(mesh);
           for (const node of result.transformNodes || []) addTop(node);
           const uniqueTops = [...new Set(tops)];
-          const hasSkeletons = (result.skeletons?.length > 0) || (result.meshes?.some((m) => m.skeleton));
+          const hasSkeletons =
+            result.skeletons?.length > 0 ||
+            result.meshes?.some((m) => m.skeleton);
           if (uniqueTops.length === 1) {
             loaderRoot = uniqueTops[0];
           } else {
             loaderRoot = new Mesh("characterGltfRoot", scene);
             for (const top of uniqueTops) top.parent = loaderRoot;
           }
-          const firstEmpty = result.meshes[0] && typeof result.meshes[0].getTotalVertices === "function" && result.meshes[0].getTotalVertices() === 0;
-          if (!hasSkeletons && firstEmpty && result.meshes.length >= 2 && result.meshes[1].parent) loaderRoot = result.meshes[1].parent;
+          const firstEmpty =
+            result.meshes[0] &&
+            typeof result.meshes[0].getTotalVertices === "function" &&
+            result.meshes[0].getTotalVertices() === 0;
+          if (
+            !hasSkeletons &&
+            firstEmpty &&
+            result.meshes.length >= 2 &&
+            result.meshes[1].parent
+          )
+            loaderRoot = result.meshes[1].parent;
           if (loaderRoot === scene) {
             const wrap = new Mesh("characterGltfRoot", scene);
             for (const top of uniqueTops) if (top !== scene) top.parent = wrap;
@@ -272,11 +341,21 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
 
         const applyCharacter = () => {
           try {
-            if (!scene.environmentTexture) scene.createDefaultEnvironment({ createGround: false, createSkybox: true });
-            if (scene.environmentIntensity === undefined) scene.environmentIntensity = 1;
+            if (!scene.environmentTexture)
+              scene.createDefaultEnvironment({
+                createGround: false,
+                createSkybox: true,
+              });
+            if (scene.environmentIntensity === undefined)
+              scene.environmentIntensity = 1;
 
-            const isZeroVertexMesh = loaderRoot.getClassName?.() === "Mesh" && typeof loaderRoot.getTotalVertices === "function" && loaderRoot.getTotalVertices() === 0;
-            const root = isZeroVertexMesh ? new TransformNode("characterGltfWrapper", scene) : loaderRoot;
+            const isZeroVertexMesh =
+              loaderRoot.getClassName?.() === "Mesh" &&
+              typeof loaderRoot.getTotalVertices === "function" &&
+              loaderRoot.getTotalVertices() === 0;
+            const root = isZeroVertexMesh
+              ? new TransformNode("characterGltfWrapper", scene)
+              : loaderRoot;
             if (isZeroVertexMesh) loaderRoot.parent = root;
 
             container.setEnabled(true);
@@ -296,16 +375,25 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
             setVisible(root);
 
             const fromResult = result.meshes || [];
-            const childMeshes = (root.getChildMeshes && root.getChildMeshes()) || [];
+            const childMeshes =
+              (root.getChildMeshes && root.getChildMeshes()) || [];
             const allMeshes = [...fromResult];
-            for (const m of childMeshes) if (!allMeshes.includes(m)) allMeshes.push(m);
-            const withVerts = allMeshes.filter((m) => typeof m.getTotalVertices === "function" && m.getTotalVertices() > 0);
+            for (const m of childMeshes)
+              if (!allMeshes.includes(m)) allMeshes.push(m);
+            const withVerts = allMeshes.filter(
+              (m) =>
+                typeof m.getTotalVertices === "function" &&
+                m.getTotalVertices() > 0,
+            );
 
             let fallbackMat = null;
             for (const mesh of withVerts) {
               if (!mesh.material) {
                 if (!fallbackMat) {
-                  fallbackMat = new StandardMaterial("characterFallbackMat", scene);
+                  fallbackMat = new StandardMaterial(
+                    "characterFallbackMat",
+                    scene,
+                  );
                   fallbackMat.diffuseColor = new Color3(0.5, 0.5, 0.55);
                   fallbackMat.backFaceCulling = false;
                 }
@@ -314,17 +402,25 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
               mesh.setEnabled(true);
               mesh.isVisible = true;
               if (mesh.receiveShadows !== undefined) mesh.receiveShadows = true;
-              if (typeof mesh.alwaysSelectAsActiveMesh !== "undefined") mesh.alwaysSelectAsActiveMesh = true;
-              if (typeof mesh.refreshBoundingInfo === "function") mesh.refreshBoundingInfo();
+              if (typeof mesh.alwaysSelectAsActiveMesh !== "undefined")
+                mesh.alwaysSelectAsActiveMesh = true;
+              if (typeof mesh.refreshBoundingInfo === "function")
+                mesh.refreshBoundingInfo();
             }
 
-            if (typeof root.computeWorldMatrix === "function") root.computeWorldMatrix(true);
-            if (shadowGenerator) for (const m of withVerts) shadowGenerator.addShadowCaster(m, false);
+            if (typeof root.computeWorldMatrix === "function")
+              root.computeWorldMatrix(true);
+            if (shadowGenerator)
+              for (const m of withVerts)
+                shadowGenerator.addShadowCaster(m, false);
 
             proceduralBodyMeshes.forEach((m) => m.dispose());
             characterRoot = root;
             characterMode = "gltf";
-            if (logLoad) console.log("[character] glTF applied; root parented to container");
+            if (logLoad)
+              console.log(
+                "[character] glTF applied; root parented to container",
+              );
           } catch (e) {
             console.warn("Character apply failed:", e);
             if (loaderRoot && loaderRoot !== scene) loaderRoot.dispose();
@@ -333,7 +429,9 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
 
         const runApply = () => {
           const envTex = scene.environmentTexture;
-          const envReady = !envTex || (typeof envTex.isReady === "function" && envTex.isReady());
+          const envReady =
+            !envTex ||
+            (typeof envTex.isReady === "function" && envTex.isReady());
           if (envReady) {
             applyCharacter();
           } else if (envTex && envTex.onLoadObservable) {
@@ -385,14 +483,28 @@ function createBoostArrowLines(scene, material) {
   const tipZ = -0.4;
   const leftDir = { x: Math.sin(angle), z: Math.cos(angle) };
   const rightDir = { x: -Math.sin(angle), z: Math.cos(angle) };
-  const leftCenter = { x: (leftDir.x * lineDepth) / 2, z: tipZ + (leftDir.z * lineDepth) / 2 };
-  const rightCenter = { x: (rightDir.x * lineDepth) / 2, z: tipZ + (rightDir.z * lineDepth) / 2 };
-  const leftLine = MeshBuilder.CreateBox("arrowLeft", { width: lineWidth, height: lineHeight, depth: lineDepth }, scene);
+  const leftCenter = {
+    x: (leftDir.x * lineDepth) / 2,
+    z: tipZ + (leftDir.z * lineDepth) / 2,
+  };
+  const rightCenter = {
+    x: (rightDir.x * lineDepth) / 2,
+    z: tipZ + (rightDir.z * lineDepth) / 2,
+  };
+  const leftLine = MeshBuilder.CreateBox(
+    "arrowLeft",
+    { width: lineWidth, height: lineHeight, depth: lineDepth },
+    scene,
+  );
   leftLine.position.set(leftCenter.x, 0, leftCenter.z);
   leftLine.rotation.y = angle;
   leftLine.material = material;
   leftLine.parent = arrowGroup;
-  const rightLine = MeshBuilder.CreateBox("arrowRight", { width: lineWidth, height: lineHeight, depth: lineDepth }, scene);
+  const rightLine = MeshBuilder.CreateBox(
+    "arrowRight",
+    { width: lineWidth, height: lineHeight, depth: lineDepth },
+    scene,
+  );
   rightLine.position.set(rightCenter.x, 0, rightCenter.z);
   rightLine.rotation.y = -angle;
   rightLine.material = material;
@@ -410,7 +522,10 @@ function createObstacleMesh(ob, scene) {
   root.metadata = { id: ob.id, type, userData };
 
   const template = obstacleTemplateCache.get(type);
-  if (template && (type === "tree" || type === "rock" || type === "box" || type === "ramp")) {
+  if (
+    template &&
+    (type === "tree" || type === "rock" || type === "box" || type === "ramp")
+  ) {
     const clone = template.clone("ob_" + ob.id + "_" + type, root);
     if (clone) {
       clone.setEnabled(true);
@@ -427,18 +542,30 @@ function createObstacleMesh(ob, scene) {
   }
 
   if (type === "tree") {
-    const trunk = MeshBuilder.CreateCylinder("trunk", { height: 1, diameterTop: 0.4, diameterBottom: 0.6, tessellation: 6 }, scene);
+    const trunk = MeshBuilder.CreateCylinder(
+      "trunk",
+      { height: 1, diameterTop: 0.4, diameterBottom: 0.6, tessellation: 6 },
+      scene,
+    );
     trunk.position.y = 0.5;
     trunk.material = new StandardMaterial("trunkMat", scene);
     trunk.material.diffuseColor = hexToColor3(0x5d4037);
     trunk.parent = root;
     const leafMat = new StandardMaterial("leafMat", scene);
     leafMat.diffuseColor = hexToColor3(CONFIG.colors.tree);
-    const b1 = MeshBuilder.CreateCylinder("b1", { height: 2, diameterTop: 0, diameterBottom: 3, tessellation: 6 }, scene);
+    const b1 = MeshBuilder.CreateCylinder(
+      "b1",
+      { height: 2, diameterTop: 0, diameterBottom: 3, tessellation: 6 },
+      scene,
+    );
     b1.position.y = 1.5;
     b1.material = leafMat;
     b1.parent = root;
-    const b2 = MeshBuilder.CreateCylinder("b2", { height: 1.5, diameterTop: 0, diameterBottom: 2.4, tessellation: 6 }, scene);
+    const b2 = MeshBuilder.CreateCylinder(
+      "b2",
+      { height: 1.5, diameterTop: 0, diameterBottom: 2.4, tessellation: 6 },
+      scene,
+    );
     b2.position.y = 2.5;
     b2.material = leafMat;
     b2.parent = root;
@@ -474,7 +601,11 @@ function createObstacleMesh(ob, scene) {
     box.material.specularPower = 100;
     box.parent = root;
   } else if (type === "ramp") {
-    const ramp = MeshBuilder.CreateBox("ramp", { width: 2, height: 0.5, depth: 4 }, scene);
+    const ramp = MeshBuilder.CreateBox(
+      "ramp",
+      { width: 2, height: 0.5, depth: 4 },
+      scene,
+    );
     ramp.material = new StandardMaterial("rampMat", scene);
     ramp.material.diffuseColor = hexToColor3(CONFIG.colors.ramp);
     ramp.parent = root;
@@ -493,7 +624,11 @@ function createParticleMesh(scene, position, color) {
 }
 
 function createRingMesh(scene, position, inner, outer, color) {
-  const ring = MeshBuilder.CreateTorus("ring", { diameter: outer * 2, thickness: outer - inner, tessellation: 32 }, scene);
+  const ring = MeshBuilder.CreateTorus(
+    "ring",
+    { diameter: outer * 2, thickness: outer - inner, tessellation: 32 },
+    scene,
+  );
   ring.rotation.x = Math.PI / 2;
   const mat = new StandardMaterial("ringMat", scene);
   mat.diffuseColor = hexToColor3(color);
@@ -505,7 +640,11 @@ function createRingMesh(scene, position, inner, outer, color) {
 }
 
 function createBoostTrailMesh(scene, position, angle) {
-  const mesh = MeshBuilder.CreateGround("trail", { width: 0.8, height: 2 }, scene);
+  const mesh = MeshBuilder.CreateGround(
+    "trail",
+    { width: 0.8, height: 2 },
+    scene,
+  );
   mesh.position.set(position.x, position.y, position.z);
   mesh.rotation.x = -Math.PI / 2;
   mesh.rotation.y = angle;
@@ -538,14 +677,22 @@ export function init(container) {
   canvasEl.style.pointerEvents = "none";
   container.appendChild(canvasEl);
 
-  engine = new Engine(canvasEl, true, { preserveDrawingBuffer: true, stencil: true });
+  engine = new Engine(canvasEl, true, {
+    preserveDrawingBuffer: true,
+    stencil: true,
+  });
   scene = new Scene(engine);
   const skyColor = hexToColor3(CONFIG.colors.sky);
   scene.clearColor = new Color4(skyColor.r, skyColor.g, skyColor.b, 1);
-  scene.fogMode = Scene.FOGMODE_LINEAR;
-  scene.fogStart = 20;
-  scene.fogEnd = 120;
-  scene.fogColor = new Color4(skyColor.r, skyColor.g, skyColor.b, 1);
+  const fogCfg = CONFIG.rendering?.fog;
+  const fogEnabled = fogCfg?.enabled !== false;
+  if (fogEnabled) {
+    scene.fogMode = Scene.FOGMODE_LINEAR;
+    scene.fogStart = fogCfg?.start ?? 20;
+    scene.fogEnd = fogCfg?.end ?? 120;
+    const fogColor3 = hexToColor3(fogCfg?.color ?? CONFIG.colors.sky);
+    scene.fogColor = new Color4(fogColor3.r, fogColor3.g, fogColor3.b, 1);
+  }
 
   camera = new ArcRotateCamera("camera", 0, 0, 0, Vector3.Zero(), scene);
   camera.setPosition(new Vector3(0, 6, 12));
@@ -563,21 +710,50 @@ export function init(container) {
   const skyUrl = CONFIG.assets?.sky;
   if (skyUrl && typeof skyUrl === "string" && skyUrl !== "") {
     try {
-      const hdrTexture = new HDRCubeTexture(skyUrl, scene, 128, false, true, false, true);
+      const hdrTexture = new HDRCubeTexture(
+        skyUrl,
+        scene,
+        1024,
+        false,
+        true,
+        false,
+        true,
+        null,
+        null,
+        true,
+      );
       scene.environmentTexture = hdrTexture;
-      scene.createDefaultSkybox(hdrTexture, true, 500, 0, false);
-    } catch (_) {
-      environmentHelper = scene.createDefaultEnvironment({ createGround: false, createSkybox: true });
+      skyboxMesh = scene.createDefaultSkybox(hdrTexture, true, 512, 0, false);
+      if (skyboxMesh && skyboxMesh.material)
+        skyboxMesh.material.fogEnabled = false;
+      // Use same clear sky blue as config (no grey-blue override)
+      scene.clearColor = new Color4(skyColor.r, skyColor.g, skyColor.b, 1);
+    } catch (err) {
+      console.warn(
+        "Sky HDR failed to load, using default environment:",
+        skyUrl,
+        err,
+      );
+      environmentHelper = scene.createDefaultEnvironment({
+        createGround: false,
+        createSkybox: true,
+      });
     }
   } else {
-    environmentHelper = scene.createDefaultEnvironment({ createGround: false, createSkybox: true });
+    environmentHelper = scene.createDefaultEnvironment({
+      createGround: false,
+      createSkybox: true,
+    });
   }
   if (scene.environmentIntensity === undefined) scene.environmentIntensity = 1;
 
   let groundMesh;
   try {
     const heightMapRes = 128;
-    const heightMapBuffer = createMogulHeightMapBuffer(heightMapRes, heightMapRes);
+    const heightMapBuffer = createMogulHeightMapBuffer(
+      heightMapRes,
+      heightMapRes,
+    );
     groundMesh = MeshBuilder.CreateGroundFromHeightMap(
       "ground",
       { data: heightMapBuffer, width: heightMapRes, height: heightMapRes },
@@ -588,9 +764,13 @@ export function init(container) {
         minHeight: -0.5,
         maxHeight: 0.5,
       },
-      scene
+      scene,
     );
-    if (!groundMesh || (typeof groundMesh.getTotalVertices === "function" && groundMesh.getTotalVertices() === 0)) {
+    if (
+      !groundMesh ||
+      (typeof groundMesh.getTotalVertices === "function" &&
+        groundMesh.getTotalVertices() === 0)
+    ) {
       throw new Error("Empty ground geometry");
     }
     const snowMat = new PBRMaterial("groundMat", scene);
@@ -598,10 +778,18 @@ export function init(container) {
     snowMat.metallic = 0;
     snowMat.roughness = 0.95;
     const snowAlbedoUrl = CONFIG.assets?.terrain?.snowAlbedo;
-    if (snowAlbedoUrl && typeof snowAlbedoUrl === "string" && snowAlbedoUrl !== "") {
+    if (
+      snowAlbedoUrl &&
+      typeof snowAlbedoUrl === "string" &&
+      snowAlbedoUrl !== ""
+    ) {
       snowMat.albedoTexture = new Texture(snowAlbedoUrl, scene);
       const snowNormalUrl = CONFIG.assets?.terrain?.snowNormal;
-      if (snowNormalUrl && typeof snowNormalUrl === "string" && snowNormalUrl !== "") {
+      if (
+        snowNormalUrl &&
+        typeof snowNormalUrl === "string" &&
+        snowNormalUrl !== ""
+      ) {
         snowMat.bumpTexture = new Texture(snowNormalUrl, scene);
       }
     }
@@ -609,7 +797,11 @@ export function init(container) {
     groundMesh.receiveShadows = true;
     groundMesh.isVisible = true;
   } catch (_) {
-    groundMesh = MeshBuilder.CreateGround("ground", { width: 200, height: 200 }, scene);
+    groundMesh = MeshBuilder.CreateGround(
+      "ground",
+      { width: 200, height: 200 },
+      scene,
+    );
     const snowMat = new StandardMaterial("groundMat", scene);
     snowMat.diffuseColor = hexToColor3(CONFIG.colors.snow);
     groundMesh.material = snowMat;
@@ -633,7 +825,9 @@ export function init(container) {
 
   // Defer obstacle template loads so the first rAF stays under the 50ms threshold.
   requestAnimationFrame(() => {
-    ["tree", "rock", "box", "ramp"].forEach((t) => loadObstacleTemplate(scene, t));
+    ["tree", "rock", "box", "ramp"].forEach((t) =>
+      loadObstacleTemplate(scene, t),
+    );
   });
 
   return { getCanvas: () => canvasEl };
@@ -673,7 +867,8 @@ export function syncFromState(state) {
       const trackLen = 6;
       for (let i = 0; i < mesh.metadata.arrowMeshes.length; i++) {
         const arrowMesh = mesh.metadata.arrowMeshes[i];
-        const z = ((phase + i * 3) % trackLen + trackLen) % trackLen - trackLen / 2;
+        const z =
+          ((((phase + i * 3) % trackLen) + trackLen) % trackLen) - trackLen / 2;
         arrowMesh.position.z = z;
         for (const child of arrowMesh.getChildMeshes()) {
           if (child.material) child.material.alpha = alpha;
@@ -725,7 +920,13 @@ export function syncFromState(state) {
   for (const e of state.effects) {
     let mesh = effectIdToMesh.get(e.id);
     if (!mesh) {
-      mesh = createRingMesh(scene, e.position, e.inner ?? 1, e.outer ?? 1.5, e.color ?? 0xffff00);
+      mesh = createRingMesh(
+        scene,
+        e.position,
+        e.inner ?? 1,
+        e.outer ?? 1.5,
+        e.color ?? 0xffff00,
+      );
       effectIdToMesh.set(e.id, mesh);
     }
     mesh.scaling.setAll(e.scale);
@@ -794,6 +995,10 @@ export function dispose() {
   if (environmentHelper) {
     environmentHelper.dispose();
     environmentHelper = null;
+  }
+  if (skyboxMesh) {
+    skyboxMesh.dispose();
+    skyboxMesh = null;
   }
   shadowGenerator = null;
   for (const template of obstacleTemplateCache.values()) {

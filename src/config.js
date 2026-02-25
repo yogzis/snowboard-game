@@ -62,6 +62,16 @@ export const CONFIG = {
   },
   // Set to { logCharacterLoad: true } to log character load/apply diagnostics.
   debug: { logCharacterLoad: true },
+  /** Optional rendering overrides. Omit or set fog.enabled: false to reduce fog so HDR sky is dominant. */
+  rendering: {
+    fog: {
+      enabled: true,
+      start: 50,
+      end: 120,
+      /** Hex fog color (defaults to colors.sky when not set). */
+      color: 0x87ceeb,
+    },
+  },
   // Asset URLs (served from public/). Omit or set to "" to use procedural fallback.
   assets: {
     basePath: "/assets",
@@ -70,7 +80,7 @@ export const CONFIG = {
     /** Pipeline test: when set, used instead of character for loading (lets you keep character: "" for procedural). Duck from Khronos glTF Sample Models. */
     characterTest: "/assets/character/snowboarder.glb",
     character: "/assets/character/snowboarder.glb",
-    sky: "/assets/sky/env.hdr",
+    sky: "/assets/sky/rocky_ridge_puresky_4k.hdr",
     terrain: {
       heightmap: "",
       snowAlbedo: "",
