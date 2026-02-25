@@ -10,8 +10,42 @@ import {
   Color3,
   Color4,
   Mesh,
+  TransformNode,
+  SceneLoader,
+  HDRCubeTexture,
+  PBRMaterial,
+  Texture,
+  ShadowGenerator,
 } from "@babylonjs/core";
+import "@babylonjs/loaders/glTF";
 import { CONFIG } from "../config.js";
+
+let environmentHelper = null;
+let shadowGenerator = null;
+
+/** Generate a procedural heightmap buffer for moguls (repeating bumps along Z with variation). */
+function createMogulHeightMapBuffer(width, height) {
+  const size = width * height * 4;
+  const buffer = new Uint8Array(size);
+  const mogulScale = 0.15;
+  const mogulFreqZ = 0.25;
+  const mogulFreqX = 0.08;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const u = x / (width - 1);
+      const v = y / (height - 1);
+      const bump = Math.sin(v * Math.PI * 2 * 12) * 0.5 + Math.sin(u * Math.PI * 2 * 4) * 0.2;
+      const h = 0.5 + mogulScale * bump + (Math.random() - 0.5) * 0.05;
+      const byte = Math.max(0, Math.min(255, Math.floor(h * 255)));
+      const i = (y * width + x) * 4;
+      buffer[i] = byte;
+      buffer[i + 1] = byte;
+      buffer[i + 2] = byte;
+      buffer[i + 3] = 255;
+    }
+  }
+  return buffer;
+}
 
 function hexToColor3(hex) {
   const r = ((hex >> 16) & 255) / 255;
@@ -22,17 +56,21 @@ function hexToColor3(hex) {
 
 let engine, scene, camera, canvasEl;
 let playerRoot, playerMeshContainer, shieldMesh, dynamiteMesh;
+/** Character visual: container (procedural) or glTF wrapper when loaded. Used for dispose only; sync is always via playerRoot/playerMeshContainer. */
+let characterRoot = null;
+/** "procedural" | "gltf" – whether characterRoot is the container or a glTF wrapper (affects dispose). */
+let characterMode = "procedural";
 let ground;
+const obstacleTemplateCache = new Map();
 let obstacleIdToMesh = new Map();
 let particleIdToMesh = new Map();
 let effectIdToMesh = new Map();
 let boostTrailIdToMesh = new Map();
 let dynamiteSparkIdToMesh = new Map();
 
-function createPlayerMeshContainer(scene) {
-  const root = new Mesh("playerRoot", scene);
-  const container = new Mesh("playerContainer", scene);
-  container.parent = root;
+/** Procedural body meshes (board, legs, torso, etc.). Replaced by glTF when loaded. */
+function createProceduralPlayer(scene, container) {
+  const meshes = [];
 
   const board = MeshBuilder.CreateBox("board", { width: 0.6, height: 0.1, depth: 2.2 }, scene);
   board.position.y = 0.05;
@@ -40,6 +78,7 @@ function createPlayerMeshContainer(scene) {
   board.material.diffuseColor = hexToColor3(0x333333);
   board.parent = container;
   board.receiveShadows = true;
+  meshes.push(board);
 
   const legMat = new StandardMaterial("legMat", scene);
   legMat.diffuseColor = hexToColor3(CONFIG.colors.pants);
@@ -48,11 +87,13 @@ function createPlayerMeshContainer(scene) {
   leftLeg.rotation.x = -0.2;
   leftLeg.material = legMat;
   leftLeg.parent = container;
+  meshes.push(leftLeg);
   const rightLeg = MeshBuilder.CreateCylinder("rightLeg", { height: 0.8, diameter: 0.3, tessellation: 8 }, scene);
   rightLeg.position.set(0.2, 0.5, -0.3);
   rightLeg.rotation.x = 0.2;
   rightLeg.material = legMat;
   rightLeg.parent = container;
+  meshes.push(rightLeg);
 
   const torsoMat = new StandardMaterial("torsoMat", scene);
   torsoMat.diffuseColor = hexToColor3(CONFIG.colors.jacket);
@@ -60,6 +101,7 @@ function createPlayerMeshContainer(scene) {
   torso.position.set(0, 1.1, 0);
   torso.material = torsoMat;
   torso.parent = container;
+  meshes.push(torso);
 
   const bagMat = new StandardMaterial("bagMat", scene);
   bagMat.diffuseColor = hexToColor3(CONFIG.colors.backpack);
@@ -67,6 +109,7 @@ function createPlayerMeshContainer(scene) {
   bag.position.set(0, 1.2, 0.35);
   bag.material = bagMat;
   bag.parent = container;
+  meshes.push(bag);
 
   const headMat = new StandardMaterial("headMat", scene);
   headMat.diffuseColor = hexToColor3(CONFIG.colors.helmet);
@@ -74,6 +117,7 @@ function createPlayerMeshContainer(scene) {
   head.position.set(0, 1.7, 0);
   head.material = headMat;
   head.parent = container;
+  meshes.push(head);
 
   const goggleMat = new StandardMaterial("goggleMat", scene);
   goggleMat.diffuseColor = hexToColor3(CONFIG.colors.goggles);
@@ -82,6 +126,7 @@ function createPlayerMeshContainer(scene) {
   goggles.position.set(0, 1.7, -0.22);
   goggles.material = goggleMat;
   goggles.parent = container;
+  meshes.push(goggles);
 
   const armGeo = MeshBuilder.CreateCylinder("arm", { height: 0.7, diameter: 0.2, tessellation: 8 }, scene);
   const leftArm = armGeo.clone("leftArm");
@@ -89,12 +134,29 @@ function createPlayerMeshContainer(scene) {
   leftArm.rotation.z = 0.5;
   leftArm.material = torsoMat;
   leftArm.parent = container;
+  meshes.push(leftArm);
   const rightArm = armGeo.clone("rightArm");
   rightArm.position.set(0.45, 1.2, 0);
   rightArm.rotation.z = -0.5;
   rightArm.material = torsoMat;
   rightArm.parent = container;
+  meshes.push(rightArm);
   armGeo.dispose();
+
+  return meshes;
+}
+
+/** Create player visual: root + container, with procedural body and optional glTF swap later. */
+function createPlayerVisual(scene) {
+  const root = new Mesh("playerRoot", scene);
+  const container = new Mesh("playerContainer", scene);
+  container.parent = root;
+  root.setEnabled(true);
+  root.isVisible = true;
+  container.setEnabled(true);
+  container.isVisible = true;
+
+  const proceduralBodyMeshes = createProceduralPlayer(scene, container);
 
   const shieldMat = new StandardMaterial("shieldMat", scene);
   shieldMat.diffuseColor = hexToColor3(CONFIG.colors.shield);
@@ -157,7 +219,161 @@ function createPlayerMeshContainer(scene) {
   dynGroup.isVisible = false;
   dynGroup.parent = container;
 
-  return { root, container, shieldMesh: shield, dynamiteMesh: dynGroup };
+  return { root, container, shieldMesh: shield, dynamiteMesh: dynGroup, proceduralBodyMeshes };
+}
+
+/** Load glTF character; on success attach to container and replace procedural body. On failure or no URL, procedural stays. Uses only assets.character (never characterTest). */
+function loadCharacterModel(scene, container, proceduralBodyMeshes) {
+  const url = (typeof CONFIG.assets?.character === "string" && CONFIG.assets.character !== "") ? CONFIG.assets.character.trim() : "";
+  if (!url) return;
+
+  const lastSlash = url.lastIndexOf("/");
+  const rootUrl = lastSlash >= 0 ? url.substring(0, lastSlash + 1) : "";
+  const filename = lastSlash >= 0 ? url.substring(lastSlash + 1) : url;
+  const scale = CONFIG.assets?.characterScale ?? 1;
+  const logLoad = CONFIG.debug?.logCharacterLoad;
+
+  const doLoad = () => {
+    SceneLoader.ImportMeshAsync(null, rootUrl, filename, scene)
+      .then((result) => {
+        const hasMeshes = result.meshes && result.meshes.length > 0;
+        const hasTransformNodes = result.transformNodes && result.transformNodes.length > 0;
+        if (!hasMeshes && !hasTransformNodes) return;
+
+        let loaderRoot;
+        if (hasMeshes) {
+          const tops = [];
+          const addTop = (node) => {
+            let n = node;
+            while (n && n.parent && n.parent !== scene) n = n.parent;
+            if (n && n !== scene) tops.push(n);
+          };
+          for (const mesh of result.meshes) addTop(mesh);
+          for (const node of result.transformNodes || []) addTop(node);
+          const uniqueTops = [...new Set(tops)];
+          const hasSkeletons = (result.skeletons?.length > 0) || (result.meshes?.some((m) => m.skeleton));
+          if (uniqueTops.length === 1) {
+            loaderRoot = uniqueTops[0];
+          } else {
+            loaderRoot = new Mesh("characterGltfRoot", scene);
+            for (const top of uniqueTops) top.parent = loaderRoot;
+          }
+          const firstEmpty = result.meshes[0] && typeof result.meshes[0].getTotalVertices === "function" && result.meshes[0].getTotalVertices() === 0;
+          if (!hasSkeletons && firstEmpty && result.meshes.length >= 2 && result.meshes[1].parent) loaderRoot = result.meshes[1].parent;
+          if (loaderRoot === scene) {
+            const wrap = new Mesh("characterGltfRoot", scene);
+            for (const top of uniqueTops) if (top !== scene) top.parent = wrap;
+            loaderRoot = wrap;
+          }
+        } else {
+          loaderRoot = result.transformNodes[0];
+        }
+        if (!loaderRoot) return;
+
+        const applyCharacter = () => {
+          try {
+            if (!scene.environmentTexture) scene.createDefaultEnvironment({ createGround: false, createSkybox: true });
+            if (scene.environmentIntensity === undefined) scene.environmentIntensity = 1;
+
+            const isZeroVertexMesh = loaderRoot.getClassName?.() === "Mesh" && typeof loaderRoot.getTotalVertices === "function" && loaderRoot.getTotalVertices() === 0;
+            const root = isZeroVertexMesh ? new TransformNode("characterGltfWrapper", scene) : loaderRoot;
+            if (isZeroVertexMesh) loaderRoot.parent = root;
+
+            container.setEnabled(true);
+            container.isVisible = true;
+            root.parent = container;
+            root.position.set(0, 0, 0);
+            root.rotation.set(0, 0, 0);
+            root.scaling.setAll(scale);
+            root.setEnabled(true);
+            if ("isVisible" in root) root.isVisible = true;
+
+            const setVisible = (node) => {
+              node.setEnabled(true);
+              if ("isVisible" in node) node.isVisible = true;
+              (node.getChildren?.() ?? []).forEach(setVisible);
+            };
+            setVisible(root);
+
+            const fromResult = result.meshes || [];
+            const childMeshes = (root.getChildMeshes && root.getChildMeshes()) || [];
+            const allMeshes = [...fromResult];
+            for (const m of childMeshes) if (!allMeshes.includes(m)) allMeshes.push(m);
+            const withVerts = allMeshes.filter((m) => typeof m.getTotalVertices === "function" && m.getTotalVertices() > 0);
+
+            let fallbackMat = null;
+            for (const mesh of withVerts) {
+              if (!mesh.material) {
+                if (!fallbackMat) {
+                  fallbackMat = new StandardMaterial("characterFallbackMat", scene);
+                  fallbackMat.diffuseColor = new Color3(0.5, 0.5, 0.55);
+                  fallbackMat.backFaceCulling = false;
+                }
+                mesh.material = fallbackMat;
+              }
+              mesh.setEnabled(true);
+              mesh.isVisible = true;
+              if (mesh.receiveShadows !== undefined) mesh.receiveShadows = true;
+              if (typeof mesh.alwaysSelectAsActiveMesh !== "undefined") mesh.alwaysSelectAsActiveMesh = true;
+              if (typeof mesh.refreshBoundingInfo === "function") mesh.refreshBoundingInfo();
+            }
+
+            if (typeof root.computeWorldMatrix === "function") root.computeWorldMatrix(true);
+            if (shadowGenerator) for (const m of withVerts) shadowGenerator.addShadowCaster(m, false);
+
+            proceduralBodyMeshes.forEach((m) => m.dispose());
+            characterRoot = root;
+            characterMode = "gltf";
+            if (logLoad) console.log("[character] glTF applied; root parented to container");
+          } catch (e) {
+            console.warn("Character apply failed:", e);
+            if (loaderRoot && loaderRoot !== scene) loaderRoot.dispose();
+          }
+        };
+
+        const runApply = () => {
+          const envTex = scene.environmentTexture;
+          const envReady = !envTex || (typeof envTex.isReady === "function" && envTex.isReady());
+          if (envReady) {
+            applyCharacter();
+          } else if (envTex && envTex.onLoadObservable) {
+            envTex.onLoadObservable.addOnce(applyCharacter);
+          } else {
+            applyCharacter();
+          }
+        };
+        setTimeout(runApply, 0);
+      })
+      .catch((err) => {
+        console.warn("Character model failed to load:", url, err);
+      });
+  };
+  requestAnimationFrame(() => requestAnimationFrame(doLoad));
+}
+
+/** Load one obstacle type glTF and store as template (invisible). Used for cloning in createObstacleMesh. */
+function loadObstacleTemplate(scene, type) {
+  const url = CONFIG.assets?.obstacles?.[type];
+  if (!url || typeof url !== "string" || url === "") return;
+
+  const lastSlash = url.lastIndexOf("/");
+  const rootUrl = lastSlash >= 0 ? url.substring(0, lastSlash + 1) : "";
+  const filename = lastSlash >= 0 ? url.substring(lastSlash + 1) : url;
+
+  SceneLoader.ImportMeshAsync(null, rootUrl, filename, scene)
+    .then((result) => {
+      if (!result.meshes || result.meshes.length === 0) return;
+      const templateRoot = new Mesh("obstacleTemplate_" + type, scene);
+      for (const mesh of result.meshes) {
+        mesh.parent = templateRoot;
+      }
+      templateRoot.setEnabled(false);
+      templateRoot.isVisible = false;
+      obstacleTemplateCache.set(type, templateRoot);
+    })
+    .catch(() => {
+      /* Fallback to procedural in createObstacleMesh */
+    });
 }
 
 function createBoostArrowLines(scene, material) {
@@ -184,12 +400,31 @@ function createBoostArrowLines(scene, material) {
   return arrowGroup;
 }
 
+const OBSTACLE_SCALE = { tree: 1.2, rock: 1.2, box: 1.0, ramp: 1.0 };
+
 function createObstacleMesh(ob, scene) {
   const { type, position, rotation, userData } = ob;
   const root = new Mesh("obstacle_" + ob.id, scene);
   root.position.set(position.x, position.y, position.z);
   root.rotation.set(rotation?.x ?? 0, rotation?.y ?? 0, rotation?.z ?? 0);
   root.metadata = { id: ob.id, type, userData };
+
+  const template = obstacleTemplateCache.get(type);
+  if (template && (type === "tree" || type === "rock" || type === "box" || type === "ramp")) {
+    const clone = template.clone("ob_" + ob.id + "_" + type, root);
+    if (clone) {
+      clone.setEnabled(true);
+      clone.isVisible = true;
+      clone.position.set(0, 0, 0);
+      const scale = OBSTACLE_SCALE[type] ?? 1;
+      clone.scaling.setAll(scale);
+      clone.receiveShadows = true;
+      for (const child of clone.getChildMeshes()) {
+        child.receiveShadows = true;
+      }
+    }
+    return root;
+  }
 
   if (type === "tree") {
     const trunk = MeshBuilder.CreateCylinder("trunk", { height: 1, diameterTop: 0.4, diameterBottom: 0.6, tessellation: 6 }, scene);
@@ -244,6 +479,8 @@ function createObstacleMesh(ob, scene) {
     ramp.material.diffuseColor = hexToColor3(CONFIG.colors.ramp);
     ramp.parent = root;
   }
+  root.receiveShadows = true;
+  for (const child of root.getChildMeshes()) child.receiveShadows = true;
   return root;
 }
 
@@ -319,18 +556,85 @@ export function init(container) {
   dirLight.position = new Vector3(10, 20, 10);
   dirLight.intensity = 0.8;
 
-  const groundMesh = MeshBuilder.CreateGround("ground", { width: 200, height: 200 }, scene);
-  groundMesh.material = new StandardMaterial("groundMat", scene);
-  groundMesh.material.diffuseColor = hexToColor3(CONFIG.colors.snow);
-  ground = groundMesh;
+  shadowGenerator = new ShadowGenerator(1024, dirLight);
+  shadowGenerator.useBlurExponentialShadowMap = false;
+  shadowGenerator.useCloseExponentialShadowMap = true;
 
-  const player = createPlayerMeshContainer(scene);
+  const skyUrl = CONFIG.assets?.sky;
+  if (skyUrl && typeof skyUrl === "string" && skyUrl !== "") {
+    try {
+      const hdrTexture = new HDRCubeTexture(skyUrl, scene, 128, false, true, false, true);
+      scene.environmentTexture = hdrTexture;
+      scene.createDefaultSkybox(hdrTexture, true, 500, 0, false);
+    } catch (_) {
+      environmentHelper = scene.createDefaultEnvironment({ createGround: false, createSkybox: true });
+    }
+  } else {
+    environmentHelper = scene.createDefaultEnvironment({ createGround: false, createSkybox: true });
+  }
+  if (scene.environmentIntensity === undefined) scene.environmentIntensity = 1;
+
+  let groundMesh;
+  try {
+    const heightMapRes = 128;
+    const heightMapBuffer = createMogulHeightMapBuffer(heightMapRes, heightMapRes);
+    groundMesh = MeshBuilder.CreateGroundFromHeightMap(
+      "ground",
+      { data: heightMapBuffer, width: heightMapRes, height: heightMapRes },
+      {
+        width: 200,
+        height: 200,
+        subdivisions: heightMapRes - 1,
+        minHeight: -0.5,
+        maxHeight: 0.5,
+      },
+      scene
+    );
+    if (!groundMesh || (typeof groundMesh.getTotalVertices === "function" && groundMesh.getTotalVertices() === 0)) {
+      throw new Error("Empty ground geometry");
+    }
+    const snowMat = new PBRMaterial("groundMat", scene);
+    snowMat.albedoColor = hexToColor3(CONFIG.colors.snow);
+    snowMat.metallic = 0;
+    snowMat.roughness = 0.95;
+    const snowAlbedoUrl = CONFIG.assets?.terrain?.snowAlbedo;
+    if (snowAlbedoUrl && typeof snowAlbedoUrl === "string" && snowAlbedoUrl !== "") {
+      snowMat.albedoTexture = new Texture(snowAlbedoUrl, scene);
+      const snowNormalUrl = CONFIG.assets?.terrain?.snowNormal;
+      if (snowNormalUrl && typeof snowNormalUrl === "string" && snowNormalUrl !== "") {
+        snowMat.bumpTexture = new Texture(snowNormalUrl, scene);
+      }
+    }
+    groundMesh.material = snowMat;
+    groundMesh.receiveShadows = true;
+    groundMesh.isVisible = true;
+  } catch (_) {
+    groundMesh = MeshBuilder.CreateGround("ground", { width: 200, height: 200 }, scene);
+    const snowMat = new StandardMaterial("groundMat", scene);
+    snowMat.diffuseColor = hexToColor3(CONFIG.colors.snow);
+    groundMesh.material = snowMat;
+    groundMesh.receiveShadows = true;
+  }
+  ground = groundMesh;
+  ground.isVisible = true;
+
+  const player = createPlayerVisual(scene);
   playerRoot = player.root;
   playerMeshContainer = player.container;
+  characterRoot = playerMeshContainer;
+  characterMode = "procedural";
   shieldMesh = player.shieldMesh;
   dynamiteMesh = player.dynamiteMesh;
   dynamiteMesh.isVisible = false;
   scene.addMesh(playerRoot);
+  if (shadowGenerator) shadowGenerator.addShadowCaster(playerRoot, true);
+
+  loadCharacterModel(scene, playerMeshContainer, player.proceduralBodyMeshes);
+
+  // Defer obstacle template loads so the first rAF stays under the 50ms threshold.
+  requestAnimationFrame(() => {
+    ["tree", "rock", "box", "ramp"].forEach((t) => loadObstacleTemplate(scene, t));
+  });
 
   return { getCanvas: () => canvasEl };
 }
@@ -358,6 +662,7 @@ export function syncFromState(state) {
     if (!mesh) {
       mesh = createObstacleMesh(ob, scene);
       obstacleIdToMesh.set(ob.id, mesh);
+      if (shadowGenerator) shadowGenerator.addShadowCaster(mesh, true);
     }
     mesh.position.set(ob.position.x, ob.position.y, ob.position.z);
     mesh.rotation.set(ob.rotation.x, ob.rotation.y, ob.rotation.z);
@@ -481,9 +786,28 @@ export function resize(width, height) {
 }
 
 export function dispose() {
+  if (characterMode === "gltf" && characterRoot) {
+    characterRoot.dispose();
+    characterRoot = null;
+    characterMode = "procedural";
+  }
+  if (environmentHelper) {
+    environmentHelper.dispose();
+    environmentHelper = null;
+  }
+  shadowGenerator = null;
+  for (const template of obstacleTemplateCache.values()) {
+    template.dispose();
+  }
+  obstacleTemplateCache.clear();
+  for (const mesh of obstacleIdToMesh.values()) mesh.dispose();
   obstacleIdToMesh.clear();
+  for (const mesh of particleIdToMesh.values()) mesh.dispose();
   particleIdToMesh.clear();
+  for (const mesh of effectIdToMesh.values()) mesh.dispose();
   effectIdToMesh.clear();
+  for (const mesh of boostTrailIdToMesh.values()) mesh.dispose();
   boostTrailIdToMesh.clear();
+  for (const mesh of dynamiteSparkIdToMesh.values()) mesh.dispose();
   dynamiteSparkIdToMesh.clear();
 }

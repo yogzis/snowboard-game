@@ -60,4 +60,28 @@ export const CONFIG = {
     playAreaWidth: 72,
     obstacleZoneMargin: 8,
   },
+  // Set to { logCharacterLoad: true } to log character load/apply diagnostics.
+  debug: { logCharacterLoad: true },
+  // Asset URLs (served from public/). Omit or set to "" to use procedural fallback.
+  assets: {
+    basePath: "/assets",
+    /** Scale applied to the glTF character. Use 1 for meter-based models (e.g. Onirix), 0.01 for cm-based. */
+    characterScale: 55,
+    /** Pipeline test: when set, used instead of character for loading (lets you keep character: "" for procedural). Duck from Khronos glTF Sample Models. */
+    characterTest: "/assets/character/snowboarder.glb",
+    character: "/assets/character/snowboarder.glb",
+    sky: "/assets/sky/env.hdr",
+    terrain: {
+      heightmap: "",
+      snowAlbedo: "",
+      snowNormal: "",
+      snowRoughness: "",
+    },
+    obstacles: {
+      tree: "/assets/obstacles/tree.glb",
+      rock: "/assets/obstacles/rock.glb",
+      box: "/assets/obstacles/box.glb",
+      ramp: "/assets/obstacles/ramp.glb",
+    },
+  },
 };
