@@ -56,8 +56,19 @@ export function spawnObstacle(zPos, xPosOverride, typeOverride, state) {
     ob.position.y = 0;
     ob.userData = { radius: 1.5, height: 0.1 };
   } else if (type === "box") {
-    ob.position.y = 2;
-    ob.userData = { radius: 1.2, height: 2.5 };
+    const isFloating = Math.random() < 0.5;
+    if (isFloating) {
+      ob.position.y = CONFIG.world.floatingBoxHeight ?? 3.5;
+      ob.userData = {
+        radius: 1.2,
+        height: 4,
+        breakHeight: CONFIG.world.floatingBoxBreakHeight ?? 3.0,
+        isFloating: true,
+      };
+    } else {
+      ob.position.y = 2;
+      ob.userData = { radius: 1.2, height: 2.5 };
+    }
     ob.rotationVel = { x: 0.02, y: 0.03, z: 0 };
   }
 
@@ -128,9 +139,22 @@ export function updateObstacles(dt, state, callbacks) {
           callbacks.triggerNotification("Sweet! That's an AIR TIME!");
         } else if (ob.type === "box") {
           const isElevated = ob.userData.isElevated;
-          const hitHeight = isElevated ? (ob.userData.breakHeight != null ? ob.userData.breakHeight : 6.0) : 2.0 - 1.5;
+          const isFloating = ob.userData.isFloating;
+          let hitHeight;
+          if (isFloating) {
+            hitHeight = ob.userData.breakHeight != null ? ob.userData.breakHeight : (CONFIG.world.floatingBoxBreakHeight ?? 3.0);
+          } else if (isElevated) {
+            hitHeight = ob.userData.breakHeight != null ? ob.userData.breakHeight : 6.0;
+          } else {
+            hitHeight = 2.0 - 1.5;
+          }
           if (pos.y > hitHeight) {
-            if (isElevated && !state.playerStats.didJumpThisAirtime) {
+            if (isFloating && !state.playerStats.didChargedJumpThisAirtime) {
+              if (!ob.missedNotificationShown) {
+                ob.missedNotificationShown = true;
+                callbacks.triggerNotification("Not this time...", "#95a5a6");
+              }
+            } else if (isElevated && !state.playerStats.didJumpThisAirtime) {
               if (!ob.missedNotificationShown) {
                 ob.missedNotificationShown = true;
                 callbacks.triggerNotification("Not this time...", "#95a5a6");
@@ -140,7 +164,12 @@ export function updateObstacles(dt, state, callbacks) {
               state.player.velocity.y = 0.3 * REF_FPS;
             }
           } else {
-            if (isElevated && !ob.missedNotificationShown) {
+            if (isFloating) {
+              if (!ob.missedNotificationShown) {
+                ob.missedNotificationShown = true;
+                callbacks.triggerNotification("Not this time...", "#95a5a6");
+              }
+            } else if (isElevated && !ob.missedNotificationShown) {
               ob.missedNotificationShown = true;
               callbacks.triggerNotification("Not this time...", "#95a5a6");
             } else {

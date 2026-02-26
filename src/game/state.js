@@ -22,6 +22,7 @@ export function createInitialState() {
       lives: 3,
       isJumping: false,
       didJumpThisAirtime: false,
+      didChargedJumpThisAirtime: false,
       rampLaunchFramesAgo: null,
       canRampAssistJump: false,
       invincibleTimer: 0,

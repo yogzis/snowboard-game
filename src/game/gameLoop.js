@@ -55,6 +55,7 @@ export function resetGameStateAndScene(state, fullReset = true) {
   state.playerStats.isJumping = false;
   state.playerStats.hasDynamite = false;
   state.playerStats.didJumpThisAirtime = false;
+  state.playerStats.didChargedJumpThisAirtime = false;
   state.playerStats.rampLaunchFramesAgo = null;
   state.playerStats.canRampAssistJump = false;
   state.playerStats.boostTimer = 0;

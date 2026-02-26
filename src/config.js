@@ -41,6 +41,8 @@ export const CONFIG = {
     jumpForceShort: 0.22,
     jumpChargeDurationMs: 600,
     jumpForceMax: 0.5,
+    /** Charge ratio (0–1) required to count as "charged jump" for floating boxes. */
+    jumpChargeThresholdForFloating: 0.5,
     rampForce: 0.4,
     rampAssistWindow: 50 / 60,
     rampAssistBoost: 0.32,
@@ -64,6 +66,8 @@ export const CONFIG = {
   world: {
     playAreaWidth: 72,
     obstacleZoneMargin: 8,
+    floatingBoxHeight: 3.5,
+    floatingBoxBreakHeight: 3.0,
   },
   // Set to { logCharacterLoad: true } to log character load/apply diagnostics.
   debug: { logCharacterLoad: true },
