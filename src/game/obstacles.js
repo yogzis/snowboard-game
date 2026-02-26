@@ -144,7 +144,7 @@ export function updateObstacles(dt, state, callbacks) {
               ob.missedNotificationShown = true;
               callbacks.triggerNotification("Not this time...", "#95a5a6");
             } else {
-              state.obstacles.splice(i, 1);
+              breakBox(ob, state, callbacks);
             }
           }
         } else {
