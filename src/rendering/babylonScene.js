@@ -409,6 +409,9 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
             root.parent = container;
             root.position.set(0, 0, 0);
             root.rotation.set(0, 0, 0);
+            // The snowboarder model faces the opposite direction compared to our
+            // gameplay coordinates, so rotate it 180° around Y once here.
+            root.rotation.y = Math.PI;
             root.scaling.setAll(scale);
             root.setEnabled(true);
             if ("isVisible" in root) root.isVisible = true;
