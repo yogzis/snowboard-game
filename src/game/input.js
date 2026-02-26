@@ -1,6 +1,10 @@
 import { CONFIG } from "../config.js";
 
 export function handleKeyDown(state, e) {
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown") {
+    if (e.repeat) return;
+    e.preventDefault();
+  }
   if (e.key === "ArrowLeft") state.input.left = true;
   if (e.key === "ArrowRight") state.input.right = true;
   if (e.key === "ArrowUp") state.input.up = true;

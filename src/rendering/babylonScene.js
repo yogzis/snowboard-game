@@ -71,6 +71,17 @@ let effectIdToMesh = new Map();
 let boostTrailIdToMesh = new Map();
 let dynamiteSparkIdToMesh = new Map();
 
+/** Animation groups from the character GLB (set when glTF is applied). */
+let characterAnimationGroups = [];
+/** Reference to the "Idle" animation group, or null if not found. */
+let idleAnimationGroup = null;
+/** Reference to the "Turn_Left" animation group, or null if not found. */
+let turnLeftAnimationGroup = null;
+/** Reference to the "Turn_Right" animation group, or null if not found. */
+let turnRightAnimationGroup = null;
+/** Which character animation is currently playing: 'idle' | 'turnLeft' | 'turnRight', or null. */
+let currentCharacterAnimation = null;
+
 /** Procedural body meshes (board, legs, torso, etc.). Replaced by glTF when loaded. */
 function createProceduralPlayer(scene, container) {
   const meshes = [];
@@ -341,6 +352,19 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
 
         const applyCharacter = () => {
           try {
+            characterAnimationGroups = result.animationGroups || [];
+            idleAnimationGroup =
+              characterAnimationGroups.find((ag) => ag.name === "Idle") ?? null;
+            turnLeftAnimationGroup =
+              characterAnimationGroups.find((ag) => ag.name === "Turn_Left") ?? null;
+            turnRightAnimationGroup =
+              characterAnimationGroups.find((ag) => ag.name === "Turn_Right") ?? null;
+            if (logLoad && characterAnimationGroups.length > 0) {
+              console.log(
+                "[character] animation names:",
+                characterAnimationGroups.map((ag) => ag.name),
+              );
+            }
             if (!scene.environmentTexture)
               scene.createDefaultEnvironment({
                 createGround: false,
@@ -417,6 +441,11 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
             proceduralBodyMeshes.forEach((m) => m.dispose());
             characterRoot = root;
             characterMode = "gltf";
+            // Default to Idle so we don't show start_wave
+            if (idleAnimationGroup && typeof idleAnimationGroup.start === "function") {
+              idleAnimationGroup.start(true);
+              currentCharacterAnimation = "idle";
+            }
             if (logLoad)
               console.log(
                 "[character] glTF applied; root parented to container",
@@ -842,6 +871,47 @@ export function syncFromState(state) {
   playerMeshContainer.rotation.y = p.angle;
   playerMeshContainer.rotation.z = -p.angle * 0.3;
 
+  if (characterMode === "gltf" && (idleAnimationGroup || turnLeftAnimationGroup || turnRightAnimationGroup)) {
+    const isIdle =
+      !state.input.left &&
+      !state.input.right &&
+      !state.playerStats.isJumping &&
+      Math.abs(p.leanBack) < 0.1;
+    let desired =
+      state.input.left
+        ? "turnLeft"
+        : state.input.right
+          ? "turnRight"
+          : isIdle
+            ? "idle"
+            : currentCharacterAnimation ?? "idle";
+    const groupFor = (key) =>
+      key === "idle"
+        ? idleAnimationGroup
+        : key === "turnLeft"
+          ? turnLeftAnimationGroup
+          : key === "turnRight"
+            ? turnRightAnimationGroup
+            : null;
+    if (desired !== currentCharacterAnimation) {
+      const prev = groupFor(currentCharacterAnimation);
+      if (prev && typeof prev.stop === "function") prev.stop();
+      const next = groupFor(desired);
+      if (next && typeof next.start === "function") {
+        const loop = desired === "idle";
+        next.start(loop);
+        // When a one-shot turn ends, show Idle instead of default (e.g. start_wave)
+        if (!loop && idleAnimationGroup && next.onAnimationGroupEndObservable) {
+          next.onAnimationGroupEndObservable.addOnce(() => {
+            if (idleAnimationGroup && typeof idleAnimationGroup.start === "function")
+              idleAnimationGroup.start(true);
+          });
+        }
+      }
+      currentCharacterAnimation = desired;
+    }
+  }
+
   ground.position.set(state.world.groundX, 0, state.world.groundZ);
 
   const currentObIds = new Set(state.obstacles.map((o) => o.id));
@@ -988,6 +1058,15 @@ export function resize(width, height) {
 
 export function dispose() {
   if (characterMode === "gltf" && characterRoot) {
+    for (const ag of characterAnimationGroups) {
+      if (ag && typeof ag.stop === "function") ag.stop();
+      if (ag && typeof ag.dispose === "function") ag.dispose();
+    }
+    characterAnimationGroups = [];
+    idleAnimationGroup = null;
+    turnLeftAnimationGroup = null;
+    turnRightAnimationGroup = null;
+    currentCharacterAnimation = null;
     characterRoot.dispose();
     characterRoot = null;
     characterMode = "procedural";
