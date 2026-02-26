@@ -10,8 +10,49 @@ import {
   Color3,
   Color4,
   Mesh,
+  TransformNode,
+  SceneLoader,
+  HDRCubeTexture,
+  PBRMaterial,
+  Texture,
+  ShadowGenerator,
+  Matrix,
+  Quaternion,
+  AnimationGroupMask,
+  AnimationGroupMaskMode,
 } from "@babylonjs/core";
+import "@babylonjs/loaders/glTF";
 import { CONFIG } from "../config.js";
+
+let environmentHelper = null;
+let skyboxMesh = null;
+let shadowGenerator = null;
+
+/** Generate a procedural heightmap buffer for moguls (repeating bumps along Z with variation). */
+function createMogulHeightMapBuffer(width, height) {
+  const size = width * height * 4;
+  const buffer = new Uint8Array(size);
+  const mogulScale = 0.15;
+  const mogulFreqZ = 0.25;
+  const mogulFreqX = 0.08;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const u = x / (width - 1);
+      const v = y / (height - 1);
+      const bump =
+        Math.sin(v * Math.PI * 2 * 12) * 0.5 +
+        Math.sin(u * Math.PI * 2 * 4) * 0.2;
+      const h = 0.5 + mogulScale * bump + (Math.random() - 0.5) * 0.05;
+      const byte = Math.max(0, Math.min(255, Math.floor(h * 255)));
+      const i = (y * width + x) * 4;
+      buffer[i] = byte;
+      buffer[i + 1] = byte;
+      buffer[i + 2] = byte;
+      buffer[i + 3] = 255;
+    }
+  }
+  return buffer;
+}
 
 function hexToColor3(hex) {
   const r = ((hex >> 16) & 255) / 255;
@@ -22,51 +63,100 @@ function hexToColor3(hex) {
 
 let engine, scene, camera, canvasEl;
 let playerRoot, playerMeshContainer, shieldMesh, dynamiteMesh;
+/** Character visual: container (procedural) or glTF wrapper when loaded. Used for dispose only; sync is always via playerRoot/playerMeshContainer. */
+let characterRoot = null;
+/** "procedural" | "gltf" – whether characterRoot is the container or a glTF wrapper (affects dispose). */
+let characterMode = "procedural";
 let ground;
+const obstacleTemplateCache = new Map();
 let obstacleIdToMesh = new Map();
 let particleIdToMesh = new Map();
 let effectIdToMesh = new Map();
 let boostTrailIdToMesh = new Map();
 let dynamiteSparkIdToMesh = new Map();
 
-function createPlayerMeshContainer(scene) {
-  const root = new Mesh("playerRoot", scene);
-  const container = new Mesh("playerContainer", scene);
-  container.parent = root;
+/** Animation groups from the character GLB (set when glTF is applied). */
+let characterAnimationGroups = [];
+/** Reference to the "Idle" animation group, or null if not found. */
+let idleAnimationGroup = null;
+/** Reference to the "Turn_Left" animation group, or null if not found. */
+let turnLeftAnimationGroup = null;
+/** Reference to the "Turn_Right" animation group, or null if not found. */
+let turnRightAnimationGroup = null;
+/** Reference to the "Fall" animation group, or null if not found. */
+let fallAnimationGroup = null;
+/** Smoothed cross-fade weights for turn animations (overlaid on Idle). */
+let currentTurnLeftWeight = 0;
+let currentTurnRightWeight = 0;
+let targetTurnLeftWeight = 0;
+let targetTurnRightWeight = 0;
+/** Track spin-out transitions so we can start/stop the Fall animation appropriately. */
+let wasSpinningOutLastFrame = false;
+/** When true, we snap pose/alignment on the next non-spinning frame after a fall. */
+let needsPostFallRealign = false;
 
-  const board = MeshBuilder.CreateBox("board", { width: 0.6, height: 0.1, depth: 2.2 }, scene);
+/** Procedural body meshes (board, legs, torso, etc.). Replaced by glTF when loaded. */
+function createProceduralPlayer(scene, container) {
+  const meshes = [];
+
+  const board = MeshBuilder.CreateBox(
+    "board",
+    { width: 0.6, height: 0.1, depth: 2.2 },
+    scene,
+  );
   board.position.y = 0.05;
   board.material = new StandardMaterial("boardMat", scene);
   board.material.diffuseColor = hexToColor3(0x333333);
   board.parent = container;
   board.receiveShadows = true;
+  meshes.push(board);
 
   const legMat = new StandardMaterial("legMat", scene);
   legMat.diffuseColor = hexToColor3(CONFIG.colors.pants);
-  const leftLeg = MeshBuilder.CreateCylinder("leftLeg", { height: 0.8, diameter: 0.3, tessellation: 8 }, scene);
+  const leftLeg = MeshBuilder.CreateCylinder(
+    "leftLeg",
+    { height: 0.8, diameter: 0.3, tessellation: 8 },
+    scene,
+  );
   leftLeg.position.set(-0.2, 0.5, 0.3);
   leftLeg.rotation.x = -0.2;
   leftLeg.material = legMat;
   leftLeg.parent = container;
-  const rightLeg = MeshBuilder.CreateCylinder("rightLeg", { height: 0.8, diameter: 0.3, tessellation: 8 }, scene);
+  meshes.push(leftLeg);
+  const rightLeg = MeshBuilder.CreateCylinder(
+    "rightLeg",
+    { height: 0.8, diameter: 0.3, tessellation: 8 },
+    scene,
+  );
   rightLeg.position.set(0.2, 0.5, -0.3);
   rightLeg.rotation.x = 0.2;
   rightLeg.material = legMat;
   rightLeg.parent = container;
+  meshes.push(rightLeg);
 
   const torsoMat = new StandardMaterial("torsoMat", scene);
   torsoMat.diffuseColor = hexToColor3(CONFIG.colors.jacket);
-  const torso = MeshBuilder.CreateBox("torso", { width: 0.7, height: 0.9, depth: 0.5 }, scene);
+  const torso = MeshBuilder.CreateBox(
+    "torso",
+    { width: 0.7, height: 0.9, depth: 0.5 },
+    scene,
+  );
   torso.position.set(0, 1.1, 0);
   torso.material = torsoMat;
   torso.parent = container;
+  meshes.push(torso);
 
   const bagMat = new StandardMaterial("bagMat", scene);
   bagMat.diffuseColor = hexToColor3(CONFIG.colors.backpack);
-  const bag = MeshBuilder.CreateBox("bag", { width: 0.5, height: 0.6, depth: 0.3 }, scene);
+  const bag = MeshBuilder.CreateBox(
+    "bag",
+    { width: 0.5, height: 0.6, depth: 0.3 },
+    scene,
+  );
   bag.position.set(0, 1.2, 0.35);
   bag.material = bagMat;
   bag.parent = container;
+  meshes.push(bag);
 
   const headMat = new StandardMaterial("headMat", scene);
   headMat.diffuseColor = hexToColor3(CONFIG.colors.helmet);
@@ -74,27 +164,54 @@ function createPlayerMeshContainer(scene) {
   head.position.set(0, 1.7, 0);
   head.material = headMat;
   head.parent = container;
+  meshes.push(head);
 
   const goggleMat = new StandardMaterial("goggleMat", scene);
   goggleMat.diffuseColor = hexToColor3(CONFIG.colors.goggles);
   goggleMat.specularPower = 100;
-  const goggles = MeshBuilder.CreateBox("goggles", { width: 0.35, height: 0.15, depth: 0.1 }, scene);
+  const goggles = MeshBuilder.CreateBox(
+    "goggles",
+    { width: 0.35, height: 0.15, depth: 0.1 },
+    scene,
+  );
   goggles.position.set(0, 1.7, -0.22);
   goggles.material = goggleMat;
   goggles.parent = container;
+  meshes.push(goggles);
 
-  const armGeo = MeshBuilder.CreateCylinder("arm", { height: 0.7, diameter: 0.2, tessellation: 8 }, scene);
+  const armGeo = MeshBuilder.CreateCylinder(
+    "arm",
+    { height: 0.7, diameter: 0.2, tessellation: 8 },
+    scene,
+  );
   const leftArm = armGeo.clone("leftArm");
   leftArm.position.set(-0.45, 1.2, 0);
   leftArm.rotation.z = 0.5;
   leftArm.material = torsoMat;
   leftArm.parent = container;
+  meshes.push(leftArm);
   const rightArm = armGeo.clone("rightArm");
   rightArm.position.set(0.45, 1.2, 0);
   rightArm.rotation.z = -0.5;
   rightArm.material = torsoMat;
   rightArm.parent = container;
+  meshes.push(rightArm);
   armGeo.dispose();
+
+  return meshes;
+}
+
+/** Create player visual: root + container, with procedural body and optional glTF swap later. */
+function createPlayerVisual(scene) {
+  const root = new Mesh("playerRoot", scene);
+  const container = new Mesh("playerContainer", scene);
+  container.parent = root;
+  root.setEnabled(true);
+  root.isVisible = true;
+  container.setEnabled(true);
+  container.isVisible = true;
+
+  const proceduralBodyMeshes = createProceduralPlayer(scene, container);
 
   const shieldMat = new StandardMaterial("shieldMat", scene);
   shieldMat.diffuseColor = hexToColor3(CONFIG.colors.shield);
@@ -105,16 +222,24 @@ function createPlayerMeshContainer(scene) {
   shield.isVisible = false;
   shield.parent = container;
 
-  const dynStick = MeshBuilder.CreateCylinder("dynStick", { height: 0.6, diameter: 0.2, tessellation: 16 }, scene);
+  const dynStick = MeshBuilder.CreateCylinder(
+    "dynStick",
+    { height: 0.6, diameter: 0.2, tessellation: 16 },
+    scene,
+  );
   dynStick.rotation.z = Math.PI / 2;
   const stickMat = new StandardMaterial("stickMat", scene);
-  stickMat.diffuseColor = hexToColor3(0x8B4513);
+  stickMat.diffuseColor = hexToColor3(0x8b4513);
   stickMat.specularColor = new Color3(0.2, 0.1, 0.05);
   stickMat.specularPower = 48;
   dynStick.material = stickMat;
   dynStick.receiveShadows = true;
 
-  const dynBody = MeshBuilder.CreateCylinder("dynBody", { height: 0.4, diameter: 0.18, tessellation: 12 }, scene);
+  const dynBody = MeshBuilder.CreateCylinder(
+    "dynBody",
+    { height: 0.4, diameter: 0.18, tessellation: 12 },
+    scene,
+  );
   dynBody.position.x = 0.35;
   dynBody.rotation.z = Math.PI / 2;
   const bodyMat = new StandardMaterial("dynBodyMat", scene);
@@ -125,7 +250,11 @@ function createPlayerMeshContainer(scene) {
   dynBody.receiveShadows = true;
   dynBody.isVisible = false;
 
-  const dynFuse = MeshBuilder.CreateCylinder("dynFuse", { height: 0.25, diameter: 0.04, tessellation: 8 }, scene);
+  const dynFuse = MeshBuilder.CreateCylinder(
+    "dynFuse",
+    { height: 0.25, diameter: 0.04, tessellation: 8 },
+    scene,
+  );
   dynFuse.position.x = 0.55;
   dynFuse.rotation.z = Math.PI / 2;
   const fuseMat = new StandardMaterial("dynFuseMat", scene);
@@ -136,7 +265,11 @@ function createPlayerMeshContainer(scene) {
   dynFuse.receiveShadows = true;
   dynFuse.isVisible = false;
 
-  const chain = MeshBuilder.CreateCylinder("chain", { height: 1, diameter: 0.04, tessellation: 10 }, scene);
+  const chain = MeshBuilder.CreateCylinder(
+    "chain",
+    { height: 1, diameter: 0.04, tessellation: 10 },
+    scene,
+  );
   chain.position.y = 0.5;
   const chainMat = new StandardMaterial("chainMat", scene);
   chainMat.diffuseColor = hexToColor3(0x555555);
@@ -157,7 +290,386 @@ function createPlayerMeshContainer(scene) {
   dynGroup.isVisible = false;
   dynGroup.parent = container;
 
-  return { root, container, shieldMesh: shield, dynamiteMesh: dynGroup };
+  return {
+    root,
+    container,
+    shieldMesh: shield,
+    dynamiteMesh: dynGroup,
+    proceduralBodyMeshes,
+  };
+}
+
+/** Load glTF character; on success attach to container and replace procedural body. On failure or no URL, procedural stays. Uses only assets.character (never characterTest). */
+function loadCharacterModel(scene, container, proceduralBodyMeshes) {
+  const url =
+    typeof CONFIG.assets?.character === "string" &&
+    CONFIG.assets.character !== ""
+      ? CONFIG.assets.character.trim()
+      : "";
+  if (!url) return;
+
+  const lastSlash = url.lastIndexOf("/");
+  const rootUrl = lastSlash >= 0 ? url.substring(0, lastSlash + 1) : "";
+  const filename = lastSlash >= 0 ? url.substring(lastSlash + 1) : url;
+  const scale = CONFIG.assets?.characterScale ?? 1;
+  const logLoad = CONFIG.debug?.logCharacterLoad;
+
+  const doLoad = () => {
+    SceneLoader.ImportMeshAsync(null, rootUrl, filename, scene)
+      .then((result) => {
+        const hasMeshes = result.meshes && result.meshes.length > 0;
+        const hasTransformNodes =
+          result.transformNodes && result.transformNodes.length > 0;
+        if (!hasMeshes && !hasTransformNodes) return;
+
+        let loaderRoot;
+        if (hasMeshes) {
+          const tops = [];
+          const addTop = (node) => {
+            let n = node;
+            while (n && n.parent && n.parent !== scene) n = n.parent;
+            if (n && n !== scene) tops.push(n);
+          };
+          for (const mesh of result.meshes) addTop(mesh);
+          for (const node of result.transformNodes || []) addTop(node);
+          const uniqueTops = [...new Set(tops)];
+          const hasSkeletons =
+            result.skeletons?.length > 0 ||
+            result.meshes?.some((m) => m.skeleton);
+          if (uniqueTops.length === 1) {
+            loaderRoot = uniqueTops[0];
+          } else {
+            loaderRoot = new Mesh("characterGltfRoot", scene);
+            for (const top of uniqueTops) top.parent = loaderRoot;
+          }
+          const firstEmpty =
+            result.meshes[0] &&
+            typeof result.meshes[0].getTotalVertices === "function" &&
+            result.meshes[0].getTotalVertices() === 0;
+          if (
+            !hasSkeletons &&
+            firstEmpty &&
+            result.meshes.length >= 2 &&
+            result.meshes[1].parent
+          )
+            loaderRoot = result.meshes[1].parent;
+          if (loaderRoot === scene) {
+            const wrap = new Mesh("characterGltfRoot", scene);
+            for (const top of uniqueTops) if (top !== scene) top.parent = wrap;
+            loaderRoot = wrap;
+          }
+        } else {
+          loaderRoot = result.transformNodes[0];
+        }
+        if (!loaderRoot) return;
+
+        const applyCharacter = () => {
+          try {
+            characterAnimationGroups = result.animationGroups || [];
+            idleAnimationGroup =
+              characterAnimationGroups.find((ag) => ag.name === "Idle") ?? null;
+            turnLeftAnimationGroup =
+              characterAnimationGroups.find((ag) => ag.name === "Turn_Left") ?? null;
+            turnRightAnimationGroup =
+              characterAnimationGroups.find((ag) => ag.name === "Turn_Right") ?? null;
+            fallAnimationGroup =
+              characterAnimationGroups.find((ag) => ag.name === "Fall") ?? null;
+            if (logLoad && characterAnimationGroups.length > 0) {
+              console.log(
+                "[character] animation names:",
+                characterAnimationGroups.map((ag) => ag.name),
+              );
+            }
+            // Configure animation blending and initial weights
+            const configureGroup = (group, initialWeight) => {
+              if (!group) return;
+              try {
+                if ("enableBlending" in group) group.enableBlending = true;
+                if ("blendingSpeed" in group && group.blendingSpeed == null)
+                  group.blendingSpeed = 0.1;
+                if (typeof group.setWeightForAllAnimatables === "function")
+                  group.setWeightForAllAnimatables(initialWeight);
+              } catch {
+                // Best-effort; ignore if this Babylon version differs
+              }
+            };
+
+            // Idle is the base layer, turn animations are overlays starting at 0 weight
+            configureGroup(idleAnimationGroup, 1);
+            configureGroup(turnLeftAnimationGroup, 0);
+            configureGroup(turnRightAnimationGroup, 0);
+
+            // Stop and zero weight for any other groups (e.g. Start_Wave) so only our clips run.
+            const controlledNames = new Set([
+              "Idle",
+              "Turn_Left",
+              "Turn_Right",
+              "Fall",
+            ]);
+            for (const ag of characterAnimationGroups) {
+              if (!ag || controlledNames.has(ag.name)) continue;
+              try {
+                if (typeof ag.setWeightForAllAnimatables === "function")
+                  ag.setWeightForAllAnimatables(0);
+                if (typeof ag.stop === "function") ag.stop();
+              } catch {
+                // Best-effort
+              }
+            }
+
+            if (!scene.environmentTexture)
+              scene.createDefaultEnvironment({
+                createGround: false,
+                createSkybox: true,
+              });
+            if (scene.environmentIntensity === undefined)
+              scene.environmentIntensity = 1;
+
+            const isZeroVertexMesh =
+              loaderRoot.getClassName?.() === "Mesh" &&
+              typeof loaderRoot.getTotalVertices === "function" &&
+              loaderRoot.getTotalVertices() === 0;
+            const root = isZeroVertexMesh
+              ? new TransformNode("characterGltfWrapper", scene)
+              : loaderRoot;
+            if (isZeroVertexMesh) loaderRoot.parent = root;
+
+            container.setEnabled(true);
+            container.isVisible = true;
+            root.parent = container;
+            root.position.set(0, 0, 0);
+            root.rotation.set(0, 0, 0);
+            // The snowboarder model faces the opposite direction compared to our
+            // gameplay coordinates, so rotate it 180° around Y once here.
+            root.rotation.y = Math.PI;
+            root.scaling.setAll(scale);
+            root.setEnabled(true);
+            if ("isVisible" in root) root.isVisible = true;
+
+            const setVisible = (node) => {
+              node.setEnabled(true);
+              if ("isVisible" in node) node.isVisible = true;
+              (node.getChildren?.() ?? []).forEach(setVisible);
+            };
+            setVisible(root);
+
+            const fromResult = result.meshes || [];
+            const childMeshes =
+              (root.getChildMeshes && root.getChildMeshes()) || [];
+            const allMeshes = [...fromResult];
+            for (const m of childMeshes)
+              if (!allMeshes.includes(m)) allMeshes.push(m);
+            const withVerts = allMeshes.filter(
+              (m) =>
+                typeof m.getTotalVertices === "function" &&
+                m.getTotalVertices() > 0,
+            );
+
+            let fallbackMat = null;
+            for (const mesh of withVerts) {
+              if (!mesh.material) {
+                if (!fallbackMat) {
+                  fallbackMat = new StandardMaterial(
+                    "characterFallbackMat",
+                    scene,
+                  );
+                  fallbackMat.diffuseColor = new Color3(0.5, 0.5, 0.55);
+                  fallbackMat.backFaceCulling = false;
+                }
+                mesh.material = fallbackMat;
+              }
+              mesh.setEnabled(true);
+              mesh.isVisible = true;
+              if (mesh.receiveShadows !== undefined) mesh.receiveShadows = true;
+              if (typeof mesh.alwaysSelectAsActiveMesh !== "undefined")
+                mesh.alwaysSelectAsActiveMesh = true;
+              if (typeof mesh.refreshBoundingInfo === "function")
+                mesh.refreshBoundingInfo();
+            }
+
+            if (typeof root.computeWorldMatrix === "function")
+              root.computeWorldMatrix(true);
+            if (shadowGenerator)
+              for (const m of withVerts)
+                shadowGenerator.addShadowCaster(m, false);
+
+            // Parent board mesh to skeleton root bone so it stays with the character during
+            // Fall animation and avoids feet/board detachment.
+            const skeleton =
+              result.skeletons && result.skeletons.length > 0
+                ? result.skeletons[0]
+                : (() => {
+                    const skinned = (result.meshes || []).find(
+                      (m) => m.skeleton != null,
+                    );
+                    return skinned ? skinned.skeleton : null;
+                  })();
+            if (skeleton && skeleton.bones && skeleton.bones.length > 0) {
+              const rootBone = skeleton.bones[0];
+              // Exclude root (and common hip/root) bone from Fall animation so the character
+              // stays aligned with the board and doesn’t detach.
+              let boneTransformNode =
+                typeof rootBone.getTransformNode === "function"
+                  ? rootBone.getTransformNode()
+                  : null;
+              if (
+                !boneTransformNode &&
+                typeof rootBone.linkTransformNode === "function"
+              ) {
+                const linked = new TransformNode("rootBoneLink", scene);
+                rootBone.linkTransformNode(linked);
+                boneTransformNode = linked;
+              }
+              if (fallAnimationGroup) {
+                const excludeNames = new Set();
+                if (rootBone.name) excludeNames.add(rootBone.name);
+                if (boneTransformNode?.name)
+                  excludeNames.add(boneTransformNode.name);
+                const targetedAnimations =
+                  fallAnimationGroup.targetedAnimations || [];
+                for (const ta of targetedAnimations) {
+                  const t = ta.target;
+                  if (!t?.name) continue;
+                  const isRootBone =
+                    t === rootBone ||
+                    (typeof t.getParent === "function" &&
+                      t.getParent?.() == null &&
+                      typeof t.getSkeleton === "function" &&
+                      t.getSkeleton?.() === skeleton);
+                  const isRootLinkedNode =
+                    boneTransformNode && t === boneTransformNode;
+                  if (isRootBone || isRootLinkedNode) excludeNames.add(t.name);
+                }
+                if (excludeNames.size > 0) {
+                  const fallRootMask = new AnimationGroupMask(
+                    [...excludeNames],
+                    AnimationGroupMaskMode.Exclude,
+                  );
+                  fallAnimationGroup.mask = fallRootMask;
+                }
+              }
+              const nonSkinned = withVerts.filter((m) => !m.skeleton);
+              let boardMesh = nonSkinned.find(
+                (m) => m.name && /board|snowboard/i.test(m.name),
+              );
+              if (!boardMesh && nonSkinned.length > 0) {
+                const nameLike = nonSkinned.find(
+                  (m) =>
+                    m.name &&
+                    /board|snowboard|plane/i.test(m.name),
+                );
+                if (nameLike) boardMesh = nameLike;
+                else if (nonSkinned.length === 1) boardMesh = nonSkinned[0];
+                else {
+                  let maxHorizExtent = -1;
+                  for (const m of nonSkinned) {
+                    const b = m.getBoundingInfo?.();
+                    if (b?.minimum && b?.maximum) {
+                      const size = b.maximum.subtract(b.minimum);
+                      const horiz = Math.max(
+                        Math.abs(size.x),
+                        Math.abs(size.z),
+                      );
+                      if (horiz > maxHorizExtent) {
+                        maxHorizExtent = horiz;
+                        boardMesh = m;
+                      }
+                    }
+                  }
+                }
+              }
+              if (boardMesh && boneTransformNode) {
+                const worldBefore = boardMesh.getWorldMatrix().clone();
+                boardMesh.setParent(boneTransformNode);
+                const boneWorld = boneTransformNode.getWorldMatrix();
+                const invBone = Matrix.Invert(boneWorld);
+                const localMat = worldBefore.clone();
+                localMat.multiplyInPlace(invBone);
+                const scale = Vector3.One();
+                const rot = Quaternion.Identity();
+                const pos = Vector3.Zero();
+                localMat.decompose(scale, rot, pos);
+                boardMesh.scaling.copyFrom(scale);
+                boardMesh.rotationQuaternion = rot;
+                boardMesh.position.copyFrom(pos);
+              }
+            }
+
+            proceduralBodyMeshes.forEach((m) => m.dispose());
+            characterRoot = root;
+            characterMode = "gltf";
+            // Default to Idle so we don't show start_wave. Idle runs as a base layer,
+            // while turn animations are overlaid via weights.
+            if (idleAnimationGroup && typeof idleAnimationGroup.start === "function") {
+              idleAnimationGroup.start(true);
+            }
+            if (turnLeftAnimationGroup && typeof turnLeftAnimationGroup.start === "function") {
+              // Start once; kept at weight 0 until needed.
+              turnLeftAnimationGroup.start(true);
+            }
+            if (turnRightAnimationGroup && typeof turnRightAnimationGroup.start === "function") {
+              // Start once; kept at weight 0 until needed.
+              turnRightAnimationGroup.start(true);
+            }
+            currentTurnLeftWeight = 0;
+            currentTurnRightWeight = 0;
+            targetTurnLeftWeight = 0;
+            targetTurnRightWeight = 0;
+            if (logLoad)
+              console.log(
+                "[character] glTF applied; root parented to container",
+              );
+          } catch (e) {
+            console.warn("Character apply failed:", e);
+            if (loaderRoot && loaderRoot !== scene) loaderRoot.dispose();
+          }
+        };
+
+        const runApply = () => {
+          const envTex = scene.environmentTexture;
+          const envReady =
+            !envTex ||
+            (typeof envTex.isReady === "function" && envTex.isReady());
+          if (envReady) {
+            applyCharacter();
+          } else if (envTex && envTex.onLoadObservable) {
+            envTex.onLoadObservable.addOnce(applyCharacter);
+          } else {
+            applyCharacter();
+          }
+        };
+        setTimeout(runApply, 0);
+      })
+      .catch((err) => {
+        console.warn("Character model failed to load:", url, err);
+      });
+  };
+  requestAnimationFrame(() => requestAnimationFrame(doLoad));
+}
+
+/** Load one obstacle type glTF and store as template (invisible). Used for cloning in createObstacleMesh. */
+function loadObstacleTemplate(scene, type) {
+  const url = CONFIG.assets?.obstacles?.[type];
+  if (!url || typeof url !== "string" || url === "") return;
+
+  const lastSlash = url.lastIndexOf("/");
+  const rootUrl = lastSlash >= 0 ? url.substring(0, lastSlash + 1) : "";
+  const filename = lastSlash >= 0 ? url.substring(lastSlash + 1) : url;
+
+  SceneLoader.ImportMeshAsync(null, rootUrl, filename, scene)
+    .then((result) => {
+      if (!result.meshes || result.meshes.length === 0) return;
+      const templateRoot = new Mesh("obstacleTemplate_" + type, scene);
+      for (const mesh of result.meshes) {
+        mesh.parent = templateRoot;
+      }
+      templateRoot.setEnabled(false);
+      templateRoot.isVisible = false;
+      obstacleTemplateCache.set(type, templateRoot);
+    })
+    .catch(() => {
+      /* Fallback to procedural in createObstacleMesh */
+    });
 }
 
 function createBoostArrowLines(scene, material) {
@@ -169,20 +681,36 @@ function createBoostArrowLines(scene, material) {
   const tipZ = -0.4;
   const leftDir = { x: Math.sin(angle), z: Math.cos(angle) };
   const rightDir = { x: -Math.sin(angle), z: Math.cos(angle) };
-  const leftCenter = { x: (leftDir.x * lineDepth) / 2, z: tipZ + (leftDir.z * lineDepth) / 2 };
-  const rightCenter = { x: (rightDir.x * lineDepth) / 2, z: tipZ + (rightDir.z * lineDepth) / 2 };
-  const leftLine = MeshBuilder.CreateBox("arrowLeft", { width: lineWidth, height: lineHeight, depth: lineDepth }, scene);
+  const leftCenter = {
+    x: (leftDir.x * lineDepth) / 2,
+    z: tipZ + (leftDir.z * lineDepth) / 2,
+  };
+  const rightCenter = {
+    x: (rightDir.x * lineDepth) / 2,
+    z: tipZ + (rightDir.z * lineDepth) / 2,
+  };
+  const leftLine = MeshBuilder.CreateBox(
+    "arrowLeft",
+    { width: lineWidth, height: lineHeight, depth: lineDepth },
+    scene,
+  );
   leftLine.position.set(leftCenter.x, 0, leftCenter.z);
   leftLine.rotation.y = angle;
   leftLine.material = material;
   leftLine.parent = arrowGroup;
-  const rightLine = MeshBuilder.CreateBox("arrowRight", { width: lineWidth, height: lineHeight, depth: lineDepth }, scene);
+  const rightLine = MeshBuilder.CreateBox(
+    "arrowRight",
+    { width: lineWidth, height: lineHeight, depth: lineDepth },
+    scene,
+  );
   rightLine.position.set(rightCenter.x, 0, rightCenter.z);
   rightLine.rotation.y = -angle;
   rightLine.material = material;
   rightLine.parent = arrowGroup;
   return arrowGroup;
 }
+
+const OBSTACLE_SCALE = { tree: 1.2, rock: 1.2, box: 1.0, ramp: 1.0 };
 
 function createObstacleMesh(ob, scene) {
   const { type, position, rotation, userData } = ob;
@@ -191,19 +719,51 @@ function createObstacleMesh(ob, scene) {
   root.rotation.set(rotation?.x ?? 0, rotation?.y ?? 0, rotation?.z ?? 0);
   root.metadata = { id: ob.id, type, userData };
 
+  const template = obstacleTemplateCache.get(type);
+  if (
+    template &&
+    (type === "tree" || type === "rock" || type === "box" || type === "ramp")
+  ) {
+    const clone = template.clone("ob_" + ob.id + "_" + type, root);
+    if (clone) {
+      clone.setEnabled(true);
+      clone.isVisible = true;
+      clone.position.set(0, 0, 0);
+      const scale = OBSTACLE_SCALE[type] ?? 1;
+      clone.scaling.setAll(scale);
+      clone.receiveShadows = true;
+      for (const child of clone.getChildMeshes()) {
+        child.receiveShadows = true;
+      }
+    }
+    return root;
+  }
+
   if (type === "tree") {
-    const trunk = MeshBuilder.CreateCylinder("trunk", { height: 1, diameterTop: 0.4, diameterBottom: 0.6, tessellation: 6 }, scene);
+    const trunk = MeshBuilder.CreateCylinder(
+      "trunk",
+      { height: 1, diameterTop: 0.4, diameterBottom: 0.6, tessellation: 6 },
+      scene,
+    );
     trunk.position.y = 0.5;
     trunk.material = new StandardMaterial("trunkMat", scene);
     trunk.material.diffuseColor = hexToColor3(0x5d4037);
     trunk.parent = root;
     const leafMat = new StandardMaterial("leafMat", scene);
     leafMat.diffuseColor = hexToColor3(CONFIG.colors.tree);
-    const b1 = MeshBuilder.CreateCylinder("b1", { height: 2, diameterTop: 0, diameterBottom: 3, tessellation: 6 }, scene);
+    const b1 = MeshBuilder.CreateCylinder(
+      "b1",
+      { height: 2, diameterTop: 0, diameterBottom: 3, tessellation: 6 },
+      scene,
+    );
     b1.position.y = 1.5;
     b1.material = leafMat;
     b1.parent = root;
-    const b2 = MeshBuilder.CreateCylinder("b2", { height: 1.5, diameterTop: 0, diameterBottom: 2.4, tessellation: 6 }, scene);
+    const b2 = MeshBuilder.CreateCylinder(
+      "b2",
+      { height: 1.5, diameterTop: 0, diameterBottom: 2.4, tessellation: 6 },
+      scene,
+    );
     b2.position.y = 2.5;
     b2.material = leafMat;
     b2.parent = root;
@@ -239,11 +799,17 @@ function createObstacleMesh(ob, scene) {
     box.material.specularPower = 100;
     box.parent = root;
   } else if (type === "ramp") {
-    const ramp = MeshBuilder.CreateBox("ramp", { width: 2, height: 0.5, depth: 4 }, scene);
+    const ramp = MeshBuilder.CreateBox(
+      "ramp",
+      { width: 2, height: 0.5, depth: 4 },
+      scene,
+    );
     ramp.material = new StandardMaterial("rampMat", scene);
     ramp.material.diffuseColor = hexToColor3(CONFIG.colors.ramp);
     ramp.parent = root;
   }
+  root.receiveShadows = true;
+  for (const child of root.getChildMeshes()) child.receiveShadows = true;
   return root;
 }
 
@@ -256,7 +822,11 @@ function createParticleMesh(scene, position, color) {
 }
 
 function createRingMesh(scene, position, inner, outer, color) {
-  const ring = MeshBuilder.CreateTorus("ring", { diameter: outer * 2, thickness: outer - inner, tessellation: 32 }, scene);
+  const ring = MeshBuilder.CreateTorus(
+    "ring",
+    { diameter: outer * 2, thickness: outer - inner, tessellation: 32 },
+    scene,
+  );
   ring.rotation.x = Math.PI / 2;
   const mat = new StandardMaterial("ringMat", scene);
   mat.diffuseColor = hexToColor3(color);
@@ -268,7 +838,11 @@ function createRingMesh(scene, position, inner, outer, color) {
 }
 
 function createBoostTrailMesh(scene, position, angle) {
-  const mesh = MeshBuilder.CreateGround("trail", { width: 0.8, height: 2 }, scene);
+  const mesh = MeshBuilder.CreateGround(
+    "trail",
+    { width: 0.8, height: 2 },
+    scene,
+  );
   mesh.position.set(position.x, position.y, position.z);
   mesh.rotation.x = -Math.PI / 2;
   mesh.rotation.y = angle;
@@ -301,14 +875,22 @@ export function init(container) {
   canvasEl.style.pointerEvents = "none";
   container.appendChild(canvasEl);
 
-  engine = new Engine(canvasEl, true, { preserveDrawingBuffer: true, stencil: true });
+  engine = new Engine(canvasEl, true, {
+    preserveDrawingBuffer: true,
+    stencil: true,
+  });
   scene = new Scene(engine);
   const skyColor = hexToColor3(CONFIG.colors.sky);
   scene.clearColor = new Color4(skyColor.r, skyColor.g, skyColor.b, 1);
-  scene.fogMode = Scene.FOGMODE_LINEAR;
-  scene.fogStart = 20;
-  scene.fogEnd = 120;
-  scene.fogColor = new Color4(skyColor.r, skyColor.g, skyColor.b, 1);
+  const fogCfg = CONFIG.rendering?.fog;
+  const fogEnabled = fogCfg?.enabled !== false;
+  if (fogEnabled) {
+    scene.fogMode = Scene.FOGMODE_LINEAR;
+    scene.fogStart = fogCfg?.start ?? 20;
+    scene.fogEnd = fogCfg?.end ?? 120;
+    const fogColor3 = hexToColor3(fogCfg?.color ?? CONFIG.colors.sky);
+    scene.fogColor = new Color4(fogColor3.r, fogColor3.g, fogColor3.b, 1);
+  }
 
   camera = new ArcRotateCamera("camera", 0, 0, 0, Vector3.Zero(), scene);
   camera.setPosition(new Vector3(0, 6, 12));
@@ -319,18 +901,132 @@ export function init(container) {
   dirLight.position = new Vector3(10, 20, 10);
   dirLight.intensity = 0.8;
 
-  const groundMesh = MeshBuilder.CreateGround("ground", { width: 200, height: 200 }, scene);
-  groundMesh.material = new StandardMaterial("groundMat", scene);
-  groundMesh.material.diffuseColor = hexToColor3(CONFIG.colors.snow);
-  ground = groundMesh;
+  shadowGenerator = new ShadowGenerator(1024, dirLight);
+  shadowGenerator.useBlurExponentialShadowMap = false;
+  shadowGenerator.useCloseExponentialShadowMap = true;
 
-  const player = createPlayerMeshContainer(scene);
+  const skyUrl = CONFIG.assets?.sky;
+  if (skyUrl && typeof skyUrl === "string" && skyUrl !== "") {
+    try {
+      const hdrTexture = new HDRCubeTexture(
+        skyUrl,
+        scene,
+        1024,
+        false,
+        true,
+        false,
+        true,
+        null,
+        null,
+        true,
+      );
+      scene.environmentTexture = hdrTexture;
+      skyboxMesh = scene.createDefaultSkybox(hdrTexture, true, 512, 0, false);
+      if (skyboxMesh && skyboxMesh.material)
+        skyboxMesh.material.fogEnabled = false;
+      // Use same clear sky blue as config (no grey-blue override)
+      scene.clearColor = new Color4(skyColor.r, skyColor.g, skyColor.b, 1);
+    } catch (err) {
+      console.warn(
+        "Sky HDR failed to load, using default environment:",
+        skyUrl,
+        err,
+      );
+      environmentHelper = scene.createDefaultEnvironment({
+        createGround: false,
+        createSkybox: true,
+      });
+    }
+  } else {
+    environmentHelper = scene.createDefaultEnvironment({
+      createGround: false,
+      createSkybox: true,
+    });
+  }
+  if (scene.environmentIntensity === undefined) scene.environmentIntensity = 1;
+
+  let groundMesh;
+  try {
+    const heightMapRes = 128;
+    const heightMapBuffer = createMogulHeightMapBuffer(
+      heightMapRes,
+      heightMapRes,
+    );
+    groundMesh = MeshBuilder.CreateGroundFromHeightMap(
+      "ground",
+      { data: heightMapBuffer, width: heightMapRes, height: heightMapRes },
+      {
+        width: 200,
+        height: 200,
+        subdivisions: heightMapRes - 1,
+        minHeight: -0.5,
+        maxHeight: 0.5,
+      },
+      scene,
+    );
+    if (
+      !groundMesh ||
+      (typeof groundMesh.getTotalVertices === "function" &&
+        groundMesh.getTotalVertices() === 0)
+    ) {
+      throw new Error("Empty ground geometry");
+    }
+    const snowMat = new PBRMaterial("groundMat", scene);
+    snowMat.albedoColor = hexToColor3(CONFIG.colors.snow);
+    snowMat.metallic = 0;
+    snowMat.roughness = 0.95;
+    const snowAlbedoUrl = CONFIG.assets?.terrain?.snowAlbedo;
+    if (
+      snowAlbedoUrl &&
+      typeof snowAlbedoUrl === "string" &&
+      snowAlbedoUrl !== ""
+    ) {
+      snowMat.albedoTexture = new Texture(snowAlbedoUrl, scene);
+      const snowNormalUrl = CONFIG.assets?.terrain?.snowNormal;
+      if (
+        snowNormalUrl &&
+        typeof snowNormalUrl === "string" &&
+        snowNormalUrl !== ""
+      ) {
+        snowMat.bumpTexture = new Texture(snowNormalUrl, scene);
+      }
+    }
+    groundMesh.material = snowMat;
+    groundMesh.receiveShadows = true;
+    groundMesh.isVisible = true;
+  } catch (_) {
+    groundMesh = MeshBuilder.CreateGround(
+      "ground",
+      { width: 200, height: 200 },
+      scene,
+    );
+    const snowMat = new StandardMaterial("groundMat", scene);
+    snowMat.diffuseColor = hexToColor3(CONFIG.colors.snow);
+    groundMesh.material = snowMat;
+    groundMesh.receiveShadows = true;
+  }
+  ground = groundMesh;
+  ground.isVisible = true;
+
+  const player = createPlayerVisual(scene);
   playerRoot = player.root;
   playerMeshContainer = player.container;
+  characterRoot = playerMeshContainer;
+  characterMode = "procedural";
   shieldMesh = player.shieldMesh;
   dynamiteMesh = player.dynamiteMesh;
   dynamiteMesh.isVisible = false;
   scene.addMesh(playerRoot);
+  if (shadowGenerator) shadowGenerator.addShadowCaster(playerRoot, true);
+
+  loadCharacterModel(scene, playerMeshContainer, player.proceduralBodyMeshes);
+
+  // Defer obstacle template loads so the first rAF stays under the 50ms threshold.
+  requestAnimationFrame(() => {
+    ["tree", "rock", "box", "ramp"].forEach((t) =>
+      loadObstacleTemplate(scene, t),
+    );
+  });
 
   return { getCanvas: () => canvasEl };
 }
@@ -339,10 +1035,209 @@ export function syncFromState(state) {
   const p = state.player;
   const pos = p.position;
   playerRoot.position.set(pos.x, pos.y, pos.z);
-  playerRoot.rotation.set(state.playerRotationX ?? 0, 0, 0);
-  playerMeshContainer.rotation.x = p.leanBack;
-  playerMeshContainer.rotation.y = p.angle;
+  const spinOut = state.spinOut || {
+    active: state.isSpinningOut,
+    phase: state.isSpinningOut ? "SPINNING" : null,
+  };
+  const spinningActive = !!spinOut.active;
+
+  // During spin-out, keep the root upright to avoid flipping into the snow.
+  if (spinningActive) {
+    playerRoot.rotation.set(0, 0, 0);
+    playerMeshContainer.rotation.x = 0;
+  } else {
+    playerRoot.rotation.set(state.playerRotationX ?? 0, 0, 0);
+    playerMeshContainer.rotation.x = p.leanBack;
+  }
+  // Use visualSpinAngle (if any) during spin-out so we can spin the character
+  // without affecting gameplay steering direction.
+  const visualY =
+    spinningActive && typeof p.visualSpinAngle === "number"
+      ? p.visualSpinAngle
+      : p.angle;
+  playerMeshContainer.rotation.y = visualY;
   playerMeshContainer.rotation.z = -p.angle * 0.3;
+
+  if (characterMode === "gltf" && (idleAnimationGroup || turnLeftAnimationGroup || turnRightAnimationGroup)) {
+    const phase = spinOut.phase;
+    const spinningOut = !!spinOut.active;
+    const inSpinPhase = phase === "SPINNING";
+    const inFallPhase = phase === "FALLING";
+
+    // Desired target weights based on input: turn animations overlay Idle.
+    const wantLeft =
+      !!state.input.left &&
+      !state.playerStats.isJumping &&
+      !spinningOut &&
+      !inFallPhase;
+    const wantRight =
+      !!state.input.right &&
+      !state.playerStats.isJumping &&
+      !spinningOut &&
+      !inFallPhase;
+
+    targetTurnLeftWeight = wantLeft ? 1 : 0;
+    targetTurnRightWeight = wantRight ? 1 : 0;
+
+    // Smoothly move current weights toward targets for a fluid feel.
+    const SMOOTHING = 0.25;
+    const lerp = (current, target) =>
+      current + (target - current) * SMOOTHING;
+
+    currentTurnLeftWeight = lerp(currentTurnLeftWeight, targetTurnLeftWeight);
+    currentTurnRightWeight = lerp(
+      currentTurnRightWeight,
+      targetTurnRightWeight,
+    );
+
+    // Clamp and snap tiny values to zero to avoid lingering influences.
+    const EPS = 0.001;
+    if (Math.abs(currentTurnLeftWeight) < EPS) currentTurnLeftWeight = 0;
+    else if (currentTurnLeftWeight > 1) currentTurnLeftWeight = 1;
+    if (Math.abs(currentTurnRightWeight) < EPS) currentTurnRightWeight = 0;
+    else if (currentTurnRightWeight > 1) currentTurnRightWeight = 1;
+
+    // Apply weights: Idle stays as base pose; turn groups fade in/out over it.
+    if (
+      idleAnimationGroup &&
+      typeof idleAnimationGroup.setWeightForAllAnimatables === "function"
+    ) {
+      // During spin-out / fall, let the Fall animation dominate.
+      const idleWeight = spinningOut ? 0 : 1;
+      idleAnimationGroup.setWeightForAllAnimatables(idleWeight);
+    }
+    if (
+      turnLeftAnimationGroup &&
+      typeof turnLeftAnimationGroup.setWeightForAllAnimatables === "function"
+    ) {
+      turnLeftAnimationGroup.setWeightForAllAnimatables(
+        currentTurnLeftWeight,
+      );
+    }
+    if (
+      turnRightAnimationGroup &&
+      typeof turnRightAnimationGroup.setWeightForAllAnimatables === "function"
+    ) {
+      turnRightAnimationGroup.setWeightForAllAnimatables(
+        currentTurnRightWeight,
+      );
+    }
+
+    // Start Fall as soon as spin-out triggers (first frame we see spinningOut), so it plays during the full spin.
+    const spinOutJustTriggered = spinningOut && !wasSpinningOutLastFrame;
+    if (spinOutJustTriggered && fallAnimationGroup) {
+      if (typeof fallAnimationGroup.stop === "function") {
+        fallAnimationGroup.stop();
+      }
+      if (typeof fallAnimationGroup.reset === "function") {
+        fallAnimationGroup.reset();
+      }
+      if (typeof fallAnimationGroup.start === "function") {
+        fallAnimationGroup.start(true);
+        if (typeof fallAnimationGroup.syncWithMask === "function") {
+          fallAnimationGroup.syncWithMask(true);
+        }
+      }
+      needsPostFallRealign = true;
+    }
+
+    if (!spinningOut && wasSpinningOutLastFrame) {
+      if (fallAnimationGroup && typeof fallAnimationGroup.stop === "function") {
+        fallAnimationGroup.stop();
+      }
+    }
+
+    wasSpinningOutLastFrame = spinningOut;
+  }
+
+  // After the fall animation has played and spin-out is no longer active, snap
+  // transforms and animation weights back to a clean Idle pose so the board and
+  // character are perfectly aligned again.
+  if (!spinningActive && needsPostFallRealign && characterMode === "gltf") {
+    needsPostFallRealign = false;
+    playerRoot.rotation.set(0, 0, 0);
+    playerMeshContainer.rotation.set(0, 0, 0);
+    state.player.visualSpinAngle = 0;
+    state.player.angle = 0;
+
+    // Fully stop Fall and zero its weight so Idle can take over without a broken blend.
+    if (fallAnimationGroup) {
+      try {
+        if (typeof fallAnimationGroup.setWeightForAllAnimatables === "function") {
+          fallAnimationGroup.setWeightForAllAnimatables(0);
+        }
+        if (typeof fallAnimationGroup.stop === "function") {
+          fallAnimationGroup.stop();
+        }
+        if (typeof fallAnimationGroup.reset === "function") {
+          fallAnimationGroup.reset();
+        }
+      } catch {
+        // Best-effort; ignore if API differs.
+      }
+    }
+
+    if (idleAnimationGroup) {
+      try {
+        if (typeof idleAnimationGroup.stop === "function") {
+          idleAnimationGroup.stop();
+        }
+        if (typeof idleAnimationGroup.reset === "function") {
+          idleAnimationGroup.reset();
+        }
+        if (typeof idleAnimationGroup.start === "function") {
+          idleAnimationGroup.start(true);
+        }
+        if (
+          typeof idleAnimationGroup.setWeightForAllAnimatables === "function"
+        ) {
+          idleAnimationGroup.setWeightForAllAnimatables(1);
+        }
+      } catch {
+        // Best-effort reset; ignore if the API differs.
+      }
+    }
+
+    // Ensure no other clips (e.g. Start_Wave) are active after fall.
+    const controlledNames = new Set([
+      "Idle",
+      "Turn_Left",
+      "Turn_Right",
+      "Fall",
+    ]);
+    const groups = Array.isArray(characterAnimationGroups)
+      ? characterAnimationGroups
+      : [];
+    for (const ag of groups) {
+      if (!ag || ag.name === "Idle") continue;
+      try {
+        if (typeof ag.setWeightForAllAnimatables === "function")
+          ag.setWeightForAllAnimatables(0);
+        if (typeof ag.stop === "function") ag.stop();
+        if (typeof ag.reset === "function") ag.reset();
+      } catch {
+        // Best-effort
+      }
+    }
+
+    if (
+      turnLeftAnimationGroup &&
+      typeof turnLeftAnimationGroup.setWeightForAllAnimatables === "function"
+    ) {
+      turnLeftAnimationGroup.setWeightForAllAnimatables(0);
+    }
+    if (
+      turnRightAnimationGroup &&
+      typeof turnRightAnimationGroup.setWeightForAllAnimatables === "function"
+    ) {
+      turnRightAnimationGroup.setWeightForAllAnimatables(0);
+    }
+
+    currentTurnLeftWeight = 0;
+    currentTurnRightWeight = 0;
+    targetTurnLeftWeight = 0;
+    targetTurnRightWeight = 0;
+  }
 
   ground.position.set(state.world.groundX, 0, state.world.groundZ);
 
@@ -358,6 +1253,7 @@ export function syncFromState(state) {
     if (!mesh) {
       mesh = createObstacleMesh(ob, scene);
       obstacleIdToMesh.set(ob.id, mesh);
+      if (shadowGenerator) shadowGenerator.addShadowCaster(mesh, true);
     }
     mesh.position.set(ob.position.x, ob.position.y, ob.position.z);
     mesh.rotation.set(ob.rotation.x, ob.rotation.y, ob.rotation.z);
@@ -368,7 +1264,8 @@ export function syncFromState(state) {
       const trackLen = 6;
       for (let i = 0; i < mesh.metadata.arrowMeshes.length; i++) {
         const arrowMesh = mesh.metadata.arrowMeshes[i];
-        const z = ((phase + i * 3) % trackLen + trackLen) % trackLen - trackLen / 2;
+        const z =
+          ((((phase + i * 3) % trackLen) + trackLen) % trackLen) - trackLen / 2;
         arrowMesh.position.z = z;
         for (const child of arrowMesh.getChildMeshes()) {
           if (child.material) child.material.alpha = alpha;
@@ -420,7 +1317,13 @@ export function syncFromState(state) {
   for (const e of state.effects) {
     let mesh = effectIdToMesh.get(e.id);
     if (!mesh) {
-      mesh = createRingMesh(scene, e.position, e.inner ?? 1, e.outer ?? 1.5, e.color ?? 0xffff00);
+      mesh = createRingMesh(
+        scene,
+        e.position,
+        e.inner ?? 1,
+        e.outer ?? 1.5,
+        e.color ?? 0xffff00,
+      );
       effectIdToMesh.set(e.id, mesh);
     }
     mesh.scaling.setAll(e.scale);
@@ -481,9 +1384,44 @@ export function resize(width, height) {
 }
 
 export function dispose() {
+  if (characterMode === "gltf" && characterRoot) {
+    for (const ag of characterAnimationGroups) {
+      if (ag && typeof ag.stop === "function") ag.stop();
+      if (ag && typeof ag.dispose === "function") ag.dispose();
+    }
+    characterAnimationGroups = [];
+    idleAnimationGroup = null;
+    turnLeftAnimationGroup = null;
+    turnRightAnimationGroup = null;
+    currentTurnLeftWeight = 0;
+    currentTurnRightWeight = 0;
+    targetTurnLeftWeight = 0;
+    targetTurnRightWeight = 0;
+    characterRoot.dispose();
+    characterRoot = null;
+    characterMode = "procedural";
+  }
+  if (environmentHelper) {
+    environmentHelper.dispose();
+    environmentHelper = null;
+  }
+  if (skyboxMesh) {
+    skyboxMesh.dispose();
+    skyboxMesh = null;
+  }
+  shadowGenerator = null;
+  for (const template of obstacleTemplateCache.values()) {
+    template.dispose();
+  }
+  obstacleTemplateCache.clear();
+  for (const mesh of obstacleIdToMesh.values()) mesh.dispose();
   obstacleIdToMesh.clear();
+  for (const mesh of particleIdToMesh.values()) mesh.dispose();
   particleIdToMesh.clear();
+  for (const mesh of effectIdToMesh.values()) mesh.dispose();
   effectIdToMesh.clear();
+  for (const mesh of boostTrailIdToMesh.values()) mesh.dispose();
   boostTrailIdToMesh.clear();
+  for (const mesh of dynamiteSparkIdToMesh.values()) mesh.dispose();
   dynamiteSparkIdToMesh.clear();
 }

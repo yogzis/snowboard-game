@@ -45,7 +45,12 @@ export const CONFIG = {
     rampAssistWindow: 50 / 60,
     rampAssistBoost: 0.32,
     spinOutThreshold: 1.5,
+    /** Total time (seconds) we consider the player to be in a spin-out state. */
     spinOutDuration: 1,
+    /** Angular speed (radians per 1/60 frame) for spin-out; smaller divisor = faster 360°. */
+    spinOutSpinSpeed: (2 * Math.PI) / 20,
+    /** Duration of the fall phase after the spin completes (seconds). */
+    spinOutFallDuration: 0.8,
   },
   game: {
     maxHP: 100,
@@ -59,5 +64,39 @@ export const CONFIG = {
   world: {
     playAreaWidth: 72,
     obstacleZoneMargin: 8,
+  },
+  // Set to { logCharacterLoad: true } to log character load/apply diagnostics.
+  debug: { logCharacterLoad: true },
+  /** Optional rendering overrides. Omit or set fog.enabled: false to reduce fog so HDR sky is dominant. */
+  rendering: {
+    fog: {
+      enabled: true,
+      start: 50,
+      end: 120,
+      /** Hex fog color (defaults to colors.sky when not set). */
+      color: 0x87ceeb,
+    },
+  },
+  // Asset URLs (served from public/). Omit or set to "" to use procedural fallback.
+  assets: {
+    basePath: "/assets",
+    /** Scale applied to the glTF character. Use 1 for meter-based models (e.g. Onirix), 0.01 for cm-based. */
+    characterScale: 55,
+    /** Pipeline test: when set, used instead of character for loading (lets you keep character: "" for procedural). Duck from Khronos glTF Sample Models. */
+    characterTest: "/assets/character/snowboarder.glb",
+    character: "/assets/character/snowboarder.glb",
+    sky: "/assets/sky/rocky_ridge_puresky_4k.hdr",
+    terrain: {
+      heightmap: "",
+      snowAlbedo: "",
+      snowNormal: "",
+      snowRoughness: "",
+    },
+    obstacles: {
+      tree: "/assets/obstacles/tree.glb",
+      rock: "/assets/obstacles/rock.glb",
+      box: "/assets/obstacles/box.glb",
+      ramp: "/assets/obstacles/ramp.glb",
+    },
   },
 };
