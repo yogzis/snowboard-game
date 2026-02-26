@@ -25,6 +25,9 @@ node_modules/
 # Build output
 dist/
 
+# Vite
+.vite/
+
 # Temporary files
 *.tmp
 *.temp
