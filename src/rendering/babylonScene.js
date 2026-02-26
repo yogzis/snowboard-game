@@ -79,8 +79,11 @@ let idleAnimationGroup = null;
 let turnLeftAnimationGroup = null;
 /** Reference to the "Turn_Right" animation group, or null if not found. */
 let turnRightAnimationGroup = null;
-/** Which character animation is currently playing: 'idle' | 'turnLeft' | 'turnRight', or null. */
-let currentCharacterAnimation = null;
+/** Smoothed cross-fade weights for turn animations (overlaid on Idle). */
+let currentTurnLeftWeight = 0;
+let currentTurnRightWeight = 0;
+let targetTurnLeftWeight = 0;
+let targetTurnRightWeight = 0;
 
 /** Procedural body meshes (board, legs, torso, etc.). Replaced by glTF when loaded. */
 function createProceduralPlayer(scene, container) {
@@ -365,6 +368,25 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
                 characterAnimationGroups.map((ag) => ag.name),
               );
             }
+            // Configure animation blending and initial weights
+            const configureGroup = (group, initialWeight) => {
+              if (!group) return;
+              try {
+                if ("enableBlending" in group) group.enableBlending = true;
+                if ("blendingSpeed" in group && group.blendingSpeed == null)
+                  group.blendingSpeed = 0.1;
+                if (typeof group.setWeightForAllAnimatables === "function")
+                  group.setWeightForAllAnimatables(initialWeight);
+              } catch {
+                // Best-effort; ignore if this Babylon version differs
+              }
+            };
+
+            // Idle is the base layer, turn animations are overlays starting at 0 weight
+            configureGroup(idleAnimationGroup, 1);
+            configureGroup(turnLeftAnimationGroup, 0);
+            configureGroup(turnRightAnimationGroup, 0);
+
             if (!scene.environmentTexture)
               scene.createDefaultEnvironment({
                 createGround: false,
@@ -441,11 +463,23 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
             proceduralBodyMeshes.forEach((m) => m.dispose());
             characterRoot = root;
             characterMode = "gltf";
-            // Default to Idle so we don't show start_wave
+            // Default to Idle so we don't show start_wave. Idle runs as a base layer,
+            // while turn animations are overlaid via weights.
             if (idleAnimationGroup && typeof idleAnimationGroup.start === "function") {
               idleAnimationGroup.start(true);
-              currentCharacterAnimation = "idle";
             }
+            if (turnLeftAnimationGroup && typeof turnLeftAnimationGroup.start === "function") {
+              // Start once; kept at weight 0 until needed.
+              turnLeftAnimationGroup.start(true);
+            }
+            if (turnRightAnimationGroup && typeof turnRightAnimationGroup.start === "function") {
+              // Start once; kept at weight 0 until needed.
+              turnRightAnimationGroup.start(true);
+            }
+            currentTurnLeftWeight = 0;
+            currentTurnRightWeight = 0;
+            targetTurnLeftWeight = 0;
+            targetTurnRightWeight = 0;
             if (logLoad)
               console.log(
                 "[character] glTF applied; root parented to container",
@@ -872,43 +906,55 @@ export function syncFromState(state) {
   playerMeshContainer.rotation.z = -p.angle * 0.3;
 
   if (characterMode === "gltf" && (idleAnimationGroup || turnLeftAnimationGroup || turnRightAnimationGroup)) {
-    const isIdle =
-      !state.input.left &&
-      !state.input.right &&
-      !state.playerStats.isJumping &&
-      Math.abs(p.leanBack) < 0.1;
-    let desired =
-      state.input.left
-        ? "turnLeft"
-        : state.input.right
-          ? "turnRight"
-          : isIdle
-            ? "idle"
-            : currentCharacterAnimation ?? "idle";
-    const groupFor = (key) =>
-      key === "idle"
-        ? idleAnimationGroup
-        : key === "turnLeft"
-          ? turnLeftAnimationGroup
-          : key === "turnRight"
-            ? turnRightAnimationGroup
-            : null;
-    if (desired !== currentCharacterAnimation) {
-      const prev = groupFor(currentCharacterAnimation);
-      if (prev && typeof prev.stop === "function") prev.stop();
-      const next = groupFor(desired);
-      if (next && typeof next.start === "function") {
-        const loop = desired === "idle";
-        next.start(loop);
-        // When a one-shot turn ends, show Idle instead of default (e.g. start_wave)
-        if (!loop && idleAnimationGroup && next.onAnimationGroupEndObservable) {
-          next.onAnimationGroupEndObservable.addOnce(() => {
-            if (idleAnimationGroup && typeof idleAnimationGroup.start === "function")
-              idleAnimationGroup.start(true);
-          });
-        }
-      }
-      currentCharacterAnimation = desired;
+    // Desired target weights based on input: turn animations overlay Idle.
+    const wantLeft =
+      !!state.input.left && !state.playerStats.isJumping;
+    const wantRight =
+      !!state.input.right && !state.playerStats.isJumping;
+
+    targetTurnLeftWeight = wantLeft ? 1 : 0;
+    targetTurnRightWeight = wantRight ? 1 : 0;
+
+    // Smoothly move current weights toward targets for a fluid feel.
+    const SMOOTHING = 0.25;
+    const lerp = (current, target) =>
+      current + (target - current) * SMOOTHING;
+
+    currentTurnLeftWeight = lerp(currentTurnLeftWeight, targetTurnLeftWeight);
+    currentTurnRightWeight = lerp(
+      currentTurnRightWeight,
+      targetTurnRightWeight,
+    );
+
+    // Clamp and snap tiny values to zero to avoid lingering influences.
+    const EPS = 0.001;
+    if (Math.abs(currentTurnLeftWeight) < EPS) currentTurnLeftWeight = 0;
+    else if (currentTurnLeftWeight > 1) currentTurnLeftWeight = 1;
+    if (Math.abs(currentTurnRightWeight) < EPS) currentTurnRightWeight = 0;
+    else if (currentTurnRightWeight > 1) currentTurnRightWeight = 1;
+
+    // Apply weights: Idle stays as base pose; turn groups fade in/out over it.
+    if (
+      idleAnimationGroup &&
+      typeof idleAnimationGroup.setWeightForAllAnimatables === "function"
+    ) {
+      idleAnimationGroup.setWeightForAllAnimatables(1);
+    }
+    if (
+      turnLeftAnimationGroup &&
+      typeof turnLeftAnimationGroup.setWeightForAllAnimatables === "function"
+    ) {
+      turnLeftAnimationGroup.setWeightForAllAnimatables(
+        currentTurnLeftWeight,
+      );
+    }
+    if (
+      turnRightAnimationGroup &&
+      typeof turnRightAnimationGroup.setWeightForAllAnimatables === "function"
+    ) {
+      turnRightAnimationGroup.setWeightForAllAnimatables(
+        currentTurnRightWeight,
+      );
     }
   }
 
@@ -1066,7 +1112,10 @@ export function dispose() {
     idleAnimationGroup = null;
     turnLeftAnimationGroup = null;
     turnRightAnimationGroup = null;
-    currentCharacterAnimation = null;
+    currentTurnLeftWeight = 0;
+    currentTurnRightWeight = 0;
+    targetTurnLeftWeight = 0;
+    targetTurnRightWeight = 0;
     characterRoot.dispose();
     characterRoot = null;
     characterMode = "procedural";
