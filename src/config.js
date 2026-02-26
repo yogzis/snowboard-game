@@ -53,6 +53,8 @@ export const CONFIG = {
     spinOutSpinSpeed: (2 * Math.PI) / 20,
     /** Duration of the fall phase after the spin completes (seconds). */
     spinOutFallDuration: 0.8,
+    /** Gravity multiplier when gliding (slower fall). */
+    glideGravityScale: 0.5,
   },
   game: {
     maxHP: 100,
@@ -62,6 +64,8 @@ export const CONFIG = {
     dynamiteDamage: 85,
     boostDuration: 3,
     baseSpawnRate: 0.2,
+    /** Seconds of cumulative air time with reduced gravity when glide prize is won. */
+    glideDuration: 5,
   },
   world: {
     playAreaWidth: 72,

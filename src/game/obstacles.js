@@ -135,6 +135,10 @@ export function updateObstacles(dt, state, callbacks) {
           state.playerStats.didJumpThisAirtime = false;
           state.playerStats.rampLaunchFramesAgo = 0;
           state.playerStats.canRampAssistJump = true;
+          if (state.playerStats.hasGlide) {
+            state.playerStats.hasGlide = false;
+            state.playerStats.glideActiveThisAirtime = true;
+          }
           state.player.velocity.y = CONFIG.physics.rampForce * REF_FPS;
           callbacks.triggerNotification("Sweet! That's an AIR TIME!");
         } else if (ob.type === "box") {
@@ -246,14 +250,17 @@ export function breakBox(ob, state, callbacks) {
         callbacks.updateUI(state);
         callbacks.triggerNotification("FULL HEAL!", "#2ecc71");
       }
-    } else {
+    } else if (rand < 0.85) {
       stats.invincibleTimer = CONFIG.game.invincibleTime * 1.5;
       state.visuals.shieldPulseTime = 0;
       state.visuals.shieldFlickerPhase = 0;
       callbacks.triggerNotification("SUPER SHIELD!", "#00ffff");
+    } else {
+      stats.hasGlide = true;
+      callbacks.triggerNotification("GLIDE!", "#9b59b6");
     }
   } else {
-    if (rand < 0.2) {
+    if (rand < 0.18) {
       if (!stats.hasDynamite) {
         stats.hasDynamite = true;
         stats.dynamiteTimer = CONFIG.game.dynamiteTime;
@@ -261,15 +268,15 @@ export function breakBox(ob, state, callbacks) {
         callbacks.triggerNotification("DYNAMITE! Jump x2 Straight to Remove!", "#e74c3c");
         callbacks.triggerDynamiteFlash();
       }
-    } else if (rand < 0.4) {
+    } else if (rand < 0.36) {
       stats.boostTimer = CONFIG.game.boostDuration;
       stats.boostTargetSpeed = CONFIG.physics.boostSpeed;
       callbacks.triggerNotification("SPEED BOOST!");
-    } else if (rand < 0.6) {
+    } else if (rand < 0.54) {
       stats.hp = Math.min(stats.hp + 30, CONFIG.game.maxHP);
       callbacks.updateUI(state);
       callbacks.triggerNotification("+30 HP", "#2ecc71");
-    } else if (rand < 0.8) {
+    } else if (rand < 0.72) {
       if (stats.lives < CONFIG.game.maxLives) {
         stats.lives++;
         callbacks.updateUI(state);
@@ -279,11 +286,14 @@ export function breakBox(ob, state, callbacks) {
         callbacks.updateUI(state);
         callbacks.triggerNotification("FULL HEAL!", "#2ecc71");
       }
-    } else {
+    } else if (rand < 0.9) {
       stats.invincibleTimer = CONFIG.game.invincibleTime;
       state.visuals.shieldPulseTime = 0;
       state.visuals.shieldFlickerPhase = 0;
       callbacks.triggerNotification("SHIELD ACTIVE!", "#00ffff");
+    } else {
+      stats.hasGlide = true;
+      callbacks.triggerNotification("GLIDE!", "#9b59b6");
     }
   }
 }

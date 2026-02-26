@@ -31,6 +31,8 @@ export function createInitialState() {
       hasDynamite: false,
       boostTimer: 0,
       boostTargetSpeed: 0,
+      hasGlide: false,
+      glideActiveThisAirtime: false,
       _lastDynamiteSecShown: 0,
     },
     obstacles: [],
@@ -83,6 +85,7 @@ export function createInitialState() {
       shieldPulseTime: 0,
       shieldFlickerPhase: 0,
       shieldOpacity: 0,
+      glidePulsePhase: 0,
     },
 
     nextObstacleId: 1,

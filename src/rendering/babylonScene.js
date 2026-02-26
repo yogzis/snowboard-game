@@ -1290,6 +1290,23 @@ export function syncFromState(state) {
     child.isVisible = showDynamite;
   }
 
+  const hasGlide = Boolean(state.playerStats?.hasGlide);
+  const boardCandidates = playerMeshContainer.getChildMeshes(true).filter(
+    (m) => m.name && /board|snowboard/i.test(m.name),
+  );
+  const boardMeshForGlide = boardCandidates.length > 0 ? boardCandidates[0] : null;
+  if (boardMeshForGlide && boardMeshForGlide.material) {
+    const defaultBoardColor = hexToColor3(0x333333);
+    const purpleColor = hexToColor3(0x9b59b6);
+    if (hasGlide) {
+      const phase = state.visuals.glidePulsePhase ?? 0;
+      const t = 0.5 + 0.5 * Math.sin(phase);
+      boardMeshForGlide.material.diffuseColor = Color3.Lerp(defaultBoardColor, purpleColor, t);
+    } else {
+      boardMeshForGlide.material.diffuseColor = defaultBoardColor;
+    }
+  }
+
   const particleIds = new Set(state.particles.map((x) => x.id));
   for (const [id, mesh] of particleIdToMesh) {
     if (!particleIds.has(id)) {

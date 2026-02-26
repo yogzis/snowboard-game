@@ -274,6 +274,10 @@ export function updatePhysics(dt, state, callbacks) {
     }
   }
 
+  if (stats.hasGlide) {
+    state.visuals.glidePulsePhase = (state.visuals.glidePulsePhase ?? 0) + dt * 4;
+  }
+
   if (stats.invincibleTimer > 0) {
     stats.invincibleTimer -= dt;
     const pulseTime = state.visuals.shieldPulseTime;
@@ -335,12 +339,14 @@ export function updatePhysics(dt, state, callbacks) {
   if (stats.isJumping) {
     if (stats.rampLaunchFramesAgo != null) stats.rampLaunchFramesAgo += dt;
     pos.y += vel.y * dt;
-    vel.y -= CONFIG.physics.gravity * REF_FPS * REF_FPS * dt;
+    const gravityScale = stats.glideActiveThisAirtime ? (CONFIG.physics.glideGravityScale ?? 0.25) : 1;
+    vel.y -= CONFIG.physics.gravity * gravityScale * REF_FPS * REF_FPS * dt;
     if (pos.y <= 0) {
       pos.y = 0;
       stats.isJumping = false;
       stats.didJumpThisAirtime = false;
       stats.didChargedJumpThisAirtime = false;
+      stats.glideActiveThisAirtime = false;
       stats.rampLaunchFramesAgo = null;
       stats.canRampAssistJump = false;
       vel.y = 0;
