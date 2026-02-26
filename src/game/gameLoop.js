@@ -32,8 +32,16 @@ export function resetGameStateAndScene(state, fullReset = true) {
   state.player.position.y = 0;
   state.player.position.z = 0;
   state.player.leanBack = 0;
+  state.player.visualSpinAngle = 0;
   state.isSpinningOut = false;
   state.spinOutTimer = 0;
+  if (state.spinOut) {
+    state.spinOut.active = false;
+    state.spinOut.phase = null;
+    state.spinOut.angleAccum = 0;
+    state.spinOut.direction = 1;
+    state.spinOut.timer = 0;
+  }
   state.turnDuration = 0;
   state.steerOnlyDuration = 0;
   state.lastSteerDir = 0;

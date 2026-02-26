@@ -45,7 +45,12 @@ export const CONFIG = {
     rampAssistWindow: 50 / 60,
     rampAssistBoost: 0.32,
     spinOutThreshold: 1.5,
+    /** Total time (seconds) we consider the player to be in a spin-out state. */
     spinOutDuration: 1,
+    /** Angular speed (radians per 1/60 frame) for spin-out; smaller divisor = faster 360°. */
+    spinOutSpinSpeed: (2 * Math.PI) / 20,
+    /** Duration of the fall phase after the spin completes (seconds). */
+    spinOutFallDuration: 0.8,
   },
   game: {
     maxHP: 100,

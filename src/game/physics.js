@@ -10,18 +10,91 @@ export function updatePhysics(dt, state, callbacks) {
   const vel = p.velocity;
   const stats = state.playerStats;
 
-  if (state.isSpinningOut) {
-    state.spinOutTimer -= dt;
-    state.player.angle += 0.4 * dt60;
-    state.speed *= Math.pow(0.92, dt60);
-    if (state.spinOutTimer <= 0) {
-      state.isSpinningOut = false;
-      state.player.angle = 0;
-      state.speed = 0.1;
+  // Ensure spinOut structure exists even for older saved states.
+  if (!state.spinOut) {
+    state.spinOut = {
+      active: false,
+      phase: null,
+      angleAccum: 0,
+      direction: 1,
+      timer: 0,
+    };
+  }
+
+  const spinOut = state.spinOut;
+  const spinSpinSpeed =
+    CONFIG.physics.spinOutSpinSpeed != null
+      ? CONFIG.physics.spinOutSpinSpeed
+      : (2 * Math.PI) / 45;
+
+  // Handle active spin-out phases (SPINNING → FALLING → RECOVERED).
+  if (spinOut.active) {
+    const decelFactor = 0.3;
+    state.speed += (0 - state.speed) * decelFactor * dt60;
+    if (Math.abs(state.speed) < 0.02) state.speed = 0;
+    state.speed = Math.max(0, state.speed);
+
+    if (spinOut.phase === "SPINNING") {
+      const remaining = Math.max(0, 2 * Math.PI - spinOut.angleAccum);
+      const step = Math.min(spinSpinSpeed * dt60, remaining);
+      spinOut.angleAccum += step;
+      // Visual-only spin (gameplay angle kept at 0 so we don't affect movement direction).
+      p.visualSpinAngle = spinOut.angleAccum * (spinOut.direction || 1);
+      p.angle = 0;
+
+      // Advance directly forward while spinning, then slow to a stop.
+      if (state.speed > 0.001) {
+        vel.z = -state.speed;
+        vel.x = 0;
+        pos.z += vel.z * dt60;
+      } else {
+        vel.z = 0;
+      }
+
+      if (spinOut.angleAccum >= 2 * Math.PI - 1e-3) {
+        spinOut.phase = "FALLING";
+        spinOut.timer =
+          CONFIG.physics.spinOutFallDuration != null
+            ? CONFIG.physics.spinOutFallDuration
+            : 0.8;
+        // Once spinning is done, align board forward; Fall animation will handle body motion.
+        p.visualSpinAngle = 0;
+      }
+    } else if (spinOut.phase === "FALLING") {
+      p.visualSpinAngle = 0;
+      p.angle = 0;
+
+      if (state.speed > 0.001) {
+        vel.z = -state.speed;
+        vel.x = 0;
+        pos.z += vel.z * dt60;
+      } else {
+        vel.z = 0;
+      }
+
+      spinOut.timer -= dt;
+      if (spinOut.timer <= 0 && state.speed === 0) {
+        spinOut.phase = "RECOVERED";
+      }
+    } else if (spinOut.phase === "RECOVERED") {
+      // Final cleanup: reset steering and fully exit spin-out.
+      p.visualSpinAngle = 0;
+      p.angle = 0;
+      state.turnDuration = 0;
+      state.steerOnlyDuration = 0;
+      state.lastSteerDir = 0;
+      spinOut.active = false;
+      spinOut.phase = null;
+      spinOut.angleAccum = 0;
+      spinOut.direction = 1;
+      spinOut.timer = 0;
     }
-    vel.z = state.speed * -Math.cos(0);
-    pos.z += vel.z * dt60;
-    if (state.cameraShake.intensity > 0) state.cameraShake.intensity *= Math.pow(0.9, dt60);
+
+    state.isSpinningOut = spinOut.active;
+    state.spinOutTimer = spinOut.timer;
+
+    if (state.cameraShake.intensity > 0)
+      state.cameraShake.intensity *= Math.pow(0.9, dt60);
     updateCameraFromPlayer(state);
     return;
   }
@@ -41,8 +114,21 @@ export function updatePhysics(dt, state, callbacks) {
 
   let steerOnlyRatio = Math.min(state.steerOnlyDuration / CONFIG.physics.spinOutThreshold, 1.0);
   if (steerOnlyRatio >= 1.0) {
+    spinOut.active = true;
+    spinOut.phase = "SPINNING";
+    spinOut.angleAccum = 0;
+    spinOut.direction = state.input.left ? -1 : 1;
+    spinOut.timer =
+      CONFIG.physics.spinOutDuration != null
+        ? CONFIG.physics.spinOutDuration
+        : 1;
     state.isSpinningOut = true;
-    state.spinOutTimer = CONFIG.physics.spinOutDuration ?? 1;
+    state.spinOutTimer = spinOut.timer;
+    // Deactivate speed boost on spin-out; player must get another from a pad.
+    if (stats.boostTimer > 0) {
+      stats.boostTimer = 0;
+      stats.boostTargetSpeed = 0;
+    }
     callbacks.triggerNotification("Hold a turn too long (~1.5 s) and you spin out.", "#e67e22");
   }
 

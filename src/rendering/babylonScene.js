@@ -16,6 +16,10 @@ import {
   PBRMaterial,
   Texture,
   ShadowGenerator,
+  Matrix,
+  Quaternion,
+  AnimationGroupMask,
+  AnimationGroupMaskMode,
 } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
 import { CONFIG } from "../config.js";
@@ -79,11 +83,17 @@ let idleAnimationGroup = null;
 let turnLeftAnimationGroup = null;
 /** Reference to the "Turn_Right" animation group, or null if not found. */
 let turnRightAnimationGroup = null;
+/** Reference to the "Fall" animation group, or null if not found. */
+let fallAnimationGroup = null;
 /** Smoothed cross-fade weights for turn animations (overlaid on Idle). */
 let currentTurnLeftWeight = 0;
 let currentTurnRightWeight = 0;
 let targetTurnLeftWeight = 0;
 let targetTurnRightWeight = 0;
+/** Track spin-out transitions so we can start/stop the Fall animation appropriately. */
+let wasSpinningOutLastFrame = false;
+/** When true, we snap pose/alignment on the next non-spinning frame after a fall. */
+let needsPostFallRealign = false;
 
 /** Procedural body meshes (board, legs, torso, etc.). Replaced by glTF when loaded. */
 function createProceduralPlayer(scene, container) {
@@ -362,6 +372,8 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
               characterAnimationGroups.find((ag) => ag.name === "Turn_Left") ?? null;
             turnRightAnimationGroup =
               characterAnimationGroups.find((ag) => ag.name === "Turn_Right") ?? null;
+            fallAnimationGroup =
+              characterAnimationGroups.find((ag) => ag.name === "Fall") ?? null;
             if (logLoad && characterAnimationGroups.length > 0) {
               console.log(
                 "[character] animation names:",
@@ -386,6 +398,24 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
             configureGroup(idleAnimationGroup, 1);
             configureGroup(turnLeftAnimationGroup, 0);
             configureGroup(turnRightAnimationGroup, 0);
+
+            // Stop and zero weight for any other groups (e.g. Start_Wave) so only our clips run.
+            const controlledNames = new Set([
+              "Idle",
+              "Turn_Left",
+              "Turn_Right",
+              "Fall",
+            ]);
+            for (const ag of characterAnimationGroups) {
+              if (!ag || controlledNames.has(ag.name)) continue;
+              try {
+                if (typeof ag.setWeightForAllAnimatables === "function")
+                  ag.setWeightForAllAnimatables(0);
+                if (typeof ag.stop === "function") ag.stop();
+              } catch {
+                // Best-effort
+              }
+            }
 
             if (!scene.environmentTexture)
               scene.createDefaultEnvironment({
@@ -462,6 +492,108 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
             if (shadowGenerator)
               for (const m of withVerts)
                 shadowGenerator.addShadowCaster(m, false);
+
+            // Parent board mesh to skeleton root bone so it stays with the character during
+            // Fall animation and avoids feet/board detachment.
+            const skeleton =
+              result.skeletons && result.skeletons.length > 0
+                ? result.skeletons[0]
+                : (() => {
+                    const skinned = (result.meshes || []).find(
+                      (m) => m.skeleton != null,
+                    );
+                    return skinned ? skinned.skeleton : null;
+                  })();
+            if (skeleton && skeleton.bones && skeleton.bones.length > 0) {
+              const rootBone = skeleton.bones[0];
+              // Exclude root (and common hip/root) bone from Fall animation so the character
+              // stays aligned with the board and doesn’t detach.
+              let boneTransformNode =
+                typeof rootBone.getTransformNode === "function"
+                  ? rootBone.getTransformNode()
+                  : null;
+              if (
+                !boneTransformNode &&
+                typeof rootBone.linkTransformNode === "function"
+              ) {
+                const linked = new TransformNode("rootBoneLink", scene);
+                rootBone.linkTransformNode(linked);
+                boneTransformNode = linked;
+              }
+              if (fallAnimationGroup) {
+                const excludeNames = new Set();
+                if (rootBone.name) excludeNames.add(rootBone.name);
+                if (boneTransformNode?.name)
+                  excludeNames.add(boneTransformNode.name);
+                const targetedAnimations =
+                  fallAnimationGroup.targetedAnimations || [];
+                for (const ta of targetedAnimations) {
+                  const t = ta.target;
+                  if (!t?.name) continue;
+                  const isRootBone =
+                    t === rootBone ||
+                    (typeof t.getParent === "function" &&
+                      t.getParent?.() == null &&
+                      typeof t.getSkeleton === "function" &&
+                      t.getSkeleton?.() === skeleton);
+                  const isRootLinkedNode =
+                    boneTransformNode && t === boneTransformNode;
+                  if (isRootBone || isRootLinkedNode) excludeNames.add(t.name);
+                }
+                if (excludeNames.size > 0) {
+                  const fallRootMask = new AnimationGroupMask(
+                    [...excludeNames],
+                    AnimationGroupMaskMode.Exclude,
+                  );
+                  fallAnimationGroup.mask = fallRootMask;
+                }
+              }
+              const nonSkinned = withVerts.filter((m) => !m.skeleton);
+              let boardMesh = nonSkinned.find(
+                (m) => m.name && /board|snowboard/i.test(m.name),
+              );
+              if (!boardMesh && nonSkinned.length > 0) {
+                const nameLike = nonSkinned.find(
+                  (m) =>
+                    m.name &&
+                    /board|snowboard|plane/i.test(m.name),
+                );
+                if (nameLike) boardMesh = nameLike;
+                else if (nonSkinned.length === 1) boardMesh = nonSkinned[0];
+                else {
+                  let maxHorizExtent = -1;
+                  for (const m of nonSkinned) {
+                    const b = m.getBoundingInfo?.();
+                    if (b?.minimum && b?.maximum) {
+                      const size = b.maximum.subtract(b.minimum);
+                      const horiz = Math.max(
+                        Math.abs(size.x),
+                        Math.abs(size.z),
+                      );
+                      if (horiz > maxHorizExtent) {
+                        maxHorizExtent = horiz;
+                        boardMesh = m;
+                      }
+                    }
+                  }
+                }
+              }
+              if (boardMesh && boneTransformNode) {
+                const worldBefore = boardMesh.getWorldMatrix().clone();
+                boardMesh.setParent(boneTransformNode);
+                const boneWorld = boneTransformNode.getWorldMatrix();
+                const invBone = Matrix.Invert(boneWorld);
+                const localMat = worldBefore.clone();
+                localMat.multiplyInPlace(invBone);
+                const scale = Vector3.One();
+                const rot = Quaternion.Identity();
+                const pos = Vector3.Zero();
+                localMat.decompose(scale, rot, pos);
+                boardMesh.scaling.copyFrom(scale);
+                boardMesh.rotationQuaternion = rot;
+                boardMesh.position.copyFrom(pos);
+              }
+            }
 
             proceduralBodyMeshes.forEach((m) => m.dispose());
             characterRoot = root;
@@ -903,17 +1035,46 @@ export function syncFromState(state) {
   const p = state.player;
   const pos = p.position;
   playerRoot.position.set(pos.x, pos.y, pos.z);
-  playerRoot.rotation.set(state.playerRotationX ?? 0, 0, 0);
-  playerMeshContainer.rotation.x = p.leanBack;
-  playerMeshContainer.rotation.y = p.angle;
+  const spinOut = state.spinOut || {
+    active: state.isSpinningOut,
+    phase: state.isSpinningOut ? "SPINNING" : null,
+  };
+  const spinningActive = !!spinOut.active;
+
+  // During spin-out, keep the root upright to avoid flipping into the snow.
+  if (spinningActive) {
+    playerRoot.rotation.set(0, 0, 0);
+    playerMeshContainer.rotation.x = 0;
+  } else {
+    playerRoot.rotation.set(state.playerRotationX ?? 0, 0, 0);
+    playerMeshContainer.rotation.x = p.leanBack;
+  }
+  // Use visualSpinAngle (if any) during spin-out so we can spin the character
+  // without affecting gameplay steering direction.
+  const visualY =
+    spinningActive && typeof p.visualSpinAngle === "number"
+      ? p.visualSpinAngle
+      : p.angle;
+  playerMeshContainer.rotation.y = visualY;
   playerMeshContainer.rotation.z = -p.angle * 0.3;
 
   if (characterMode === "gltf" && (idleAnimationGroup || turnLeftAnimationGroup || turnRightAnimationGroup)) {
+    const phase = spinOut.phase;
+    const spinningOut = !!spinOut.active;
+    const inSpinPhase = phase === "SPINNING";
+    const inFallPhase = phase === "FALLING";
+
     // Desired target weights based on input: turn animations overlay Idle.
     const wantLeft =
-      !!state.input.left && !state.playerStats.isJumping;
+      !!state.input.left &&
+      !state.playerStats.isJumping &&
+      !spinningOut &&
+      !inFallPhase;
     const wantRight =
-      !!state.input.right && !state.playerStats.isJumping;
+      !!state.input.right &&
+      !state.playerStats.isJumping &&
+      !spinningOut &&
+      !inFallPhase;
 
     targetTurnLeftWeight = wantLeft ? 1 : 0;
     targetTurnRightWeight = wantRight ? 1 : 0;
@@ -941,7 +1102,9 @@ export function syncFromState(state) {
       idleAnimationGroup &&
       typeof idleAnimationGroup.setWeightForAllAnimatables === "function"
     ) {
-      idleAnimationGroup.setWeightForAllAnimatables(1);
+      // During spin-out / fall, let the Fall animation dominate.
+      const idleWeight = spinningOut ? 0 : 1;
+      idleAnimationGroup.setWeightForAllAnimatables(idleWeight);
     }
     if (
       turnLeftAnimationGroup &&
@@ -959,6 +1122,121 @@ export function syncFromState(state) {
         currentTurnRightWeight,
       );
     }
+
+    // Start Fall as soon as spin-out triggers (first frame we see spinningOut), so it plays during the full spin.
+    const spinOutJustTriggered = spinningOut && !wasSpinningOutLastFrame;
+    if (spinOutJustTriggered && fallAnimationGroup) {
+      if (typeof fallAnimationGroup.stop === "function") {
+        fallAnimationGroup.stop();
+      }
+      if (typeof fallAnimationGroup.reset === "function") {
+        fallAnimationGroup.reset();
+      }
+      if (typeof fallAnimationGroup.start === "function") {
+        fallAnimationGroup.start(true);
+        if (typeof fallAnimationGroup.syncWithMask === "function") {
+          fallAnimationGroup.syncWithMask(true);
+        }
+      }
+      needsPostFallRealign = true;
+    }
+
+    if (!spinningOut && wasSpinningOutLastFrame) {
+      if (fallAnimationGroup && typeof fallAnimationGroup.stop === "function") {
+        fallAnimationGroup.stop();
+      }
+    }
+
+    wasSpinningOutLastFrame = spinningOut;
+  }
+
+  // After the fall animation has played and spin-out is no longer active, snap
+  // transforms and animation weights back to a clean Idle pose so the board and
+  // character are perfectly aligned again.
+  if (!spinningActive && needsPostFallRealign && characterMode === "gltf") {
+    needsPostFallRealign = false;
+    playerRoot.rotation.set(0, 0, 0);
+    playerMeshContainer.rotation.set(0, 0, 0);
+    state.player.visualSpinAngle = 0;
+    state.player.angle = 0;
+
+    // Fully stop Fall and zero its weight so Idle can take over without a broken blend.
+    if (fallAnimationGroup) {
+      try {
+        if (typeof fallAnimationGroup.setWeightForAllAnimatables === "function") {
+          fallAnimationGroup.setWeightForAllAnimatables(0);
+        }
+        if (typeof fallAnimationGroup.stop === "function") {
+          fallAnimationGroup.stop();
+        }
+        if (typeof fallAnimationGroup.reset === "function") {
+          fallAnimationGroup.reset();
+        }
+      } catch {
+        // Best-effort; ignore if API differs.
+      }
+    }
+
+    if (idleAnimationGroup) {
+      try {
+        if (typeof idleAnimationGroup.stop === "function") {
+          idleAnimationGroup.stop();
+        }
+        if (typeof idleAnimationGroup.reset === "function") {
+          idleAnimationGroup.reset();
+        }
+        if (typeof idleAnimationGroup.start === "function") {
+          idleAnimationGroup.start(true);
+        }
+        if (
+          typeof idleAnimationGroup.setWeightForAllAnimatables === "function"
+        ) {
+          idleAnimationGroup.setWeightForAllAnimatables(1);
+        }
+      } catch {
+        // Best-effort reset; ignore if the API differs.
+      }
+    }
+
+    // Ensure no other clips (e.g. Start_Wave) are active after fall.
+    const controlledNames = new Set([
+      "Idle",
+      "Turn_Left",
+      "Turn_Right",
+      "Fall",
+    ]);
+    const groups = Array.isArray(characterAnimationGroups)
+      ? characterAnimationGroups
+      : [];
+    for (const ag of groups) {
+      if (!ag || ag.name === "Idle") continue;
+      try {
+        if (typeof ag.setWeightForAllAnimatables === "function")
+          ag.setWeightForAllAnimatables(0);
+        if (typeof ag.stop === "function") ag.stop();
+        if (typeof ag.reset === "function") ag.reset();
+      } catch {
+        // Best-effort
+      }
+    }
+
+    if (
+      turnLeftAnimationGroup &&
+      typeof turnLeftAnimationGroup.setWeightForAllAnimatables === "function"
+    ) {
+      turnLeftAnimationGroup.setWeightForAllAnimatables(0);
+    }
+    if (
+      turnRightAnimationGroup &&
+      typeof turnRightAnimationGroup.setWeightForAllAnimatables === "function"
+    ) {
+      turnRightAnimationGroup.setWeightForAllAnimatables(0);
+    }
+
+    currentTurnLeftWeight = 0;
+    currentTurnRightWeight = 0;
+    targetTurnLeftWeight = 0;
+    targetTurnRightWeight = 0;
   }
 
   ground.position.set(state.world.groundX, 0, state.world.groundZ);
