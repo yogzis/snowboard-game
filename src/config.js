@@ -14,6 +14,7 @@ export const CONFIG = {
     boost: 0x2ecc71,
     shield: 0x00ffff,
     ramp: 0x95a5a6,
+    glideIndicator: 0x9b59b6,
   },
   physics: {
     maxSpeed: 0.85,
@@ -54,7 +55,7 @@ export const CONFIG = {
     /** Duration of the fall phase after the spin completes (seconds). */
     spinOutFallDuration: 0.8,
     /** Gravity multiplier when gliding (slower fall). */
-    glideGravityScale: 0.5,
+    glideGravityScale: 0.6,
   },
   game: {
     maxHP: 100,
@@ -77,6 +78,8 @@ export const CONFIG = {
   debug: { logCharacterLoad: true },
   /** Optional rendering overrides. Omit or set fog.enabled: false to reduce fog so HDR sky is dominant. */
   rendering: {
+    /** Roll (tilt) applied when steering: container rotation.z = -playerAngle * steeringTiltScale. Increase for more lean, decrease for subtler tilt (e.g. 0.2–0.5). */
+    steeringTiltScale: -0.3,
     fog: {
       enabled: true,
       start: 50,

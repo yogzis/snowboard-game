@@ -85,7 +85,6 @@ export function createInitialState() {
       shieldPulseTime: 0,
       shieldFlickerPhase: 0,
       shieldOpacity: 0,
-      glidePulsePhase: 0,
     },
 
     nextObstacleId: 1,

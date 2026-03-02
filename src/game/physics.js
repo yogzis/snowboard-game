@@ -274,10 +274,6 @@ export function updatePhysics(dt, state, callbacks) {
     }
   }
 
-  if (stats.hasGlide) {
-    state.visuals.glidePulsePhase = (state.visuals.glidePulsePhase ?? 0) + dt * 4;
-  }
-
   if (stats.invincibleTimer > 0) {
     stats.invincibleTimer -= dt;
     const pulseTime = state.visuals.shieldPulseTime;

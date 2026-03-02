@@ -6,8 +6,7 @@
     <title>Character Test – Summit Shredder</title>
     <style>
       * { box-sizing: border-box; }
-      body { margin: 0; font-family: sans-serif; }
-      #render-canvas { display: block; width: 100%; height: 100vh; }
+      body { margin: 0; font-family: sans-serif; overflow: hidden; }
       .back-bar {
         position: fixed;
         top: 0;
@@ -16,6 +15,10 @@
         padding: 12px 20px;
         background: rgba(0,0,0,0.5);
         z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        flex-wrap: wrap;
       }
       .back-bar a {
         color: #fff;
@@ -25,13 +28,51 @@
         border-radius: 8px;
       }
       .back-bar a:hover { background: #c0392b; }
+      .scenario-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .scenario-row label { color: #fff; font-weight: 600; }
+      .scenario-row select {
+        padding: 6px 12px;
+        font-size: 14px;
+        min-width: 200px;
+        border-radius: 6px;
+      }
+      #game-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+      }
+      .description-panel {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 12px 20px;
+        background: rgba(0,0,0,0.6);
+        color: #ddd;
+        font-size: 13px;
+        z-index: 10;
+        max-height: 80px;
+        overflow-y: auto;
+      }
     </style>
   </head>
   <body>
     <div class="back-bar">
       <a href="/">Back to game</a>
+      <div class="scenario-row">
+        <label for="scenario-select">Scenario:</label>
+        <select id="scenario-select" aria-label="Character scenario"></select>
+      </div>
     </div>
-    <canvas id="render-canvas"></canvas>
+    <div id="game-container"></div>
+    <div class="description-panel" id="scenario-description" aria-live="polite"></div>
     <script type="module" src="/src/characterTest.js"></script>
   </body>
 </html>

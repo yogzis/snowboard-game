@@ -2,7 +2,7 @@ import { CONFIG } from "../config.js";
 
 export function handleKeyDown(state, e) {
   if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown") {
-    if (e.repeat) return;
+    if (e.repeat) return; // treat as held: ignore key repeat so left/right/up/down are held, not repeated
     e.preventDefault();
   }
   if (e.key === "ArrowLeft") state.input.left = true;

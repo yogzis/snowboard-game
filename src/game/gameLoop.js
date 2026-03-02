@@ -76,7 +76,6 @@ export function resetGameStateAndScene(state, fullReset = true) {
   state.visuals.shieldPulseTime = 0;
   state.visuals.shieldFlickerPhase = 0;
   state.visuals.shieldOpacity = 0;
-  state.visuals.glidePulsePhase = 0;
   state.camera.position.x = 0;
   state.camera.position.y = 6;
   state.camera.position.z = 12;

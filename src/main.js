@@ -146,10 +146,10 @@ if (dom.jumpChargeContainer && dom.jumpChargeBar) {
       const elapsed = performance.now() - state.jumpPressStartedAt;
       const charge = Math.min(1, elapsed / chargeDuration);
       dom.jumpChargeContainer.classList.add("visible");
-      dom.jumpChargeBar.style.height = charge * 100 + "%";
+      dom.jumpChargeBar.value = Math.round(charge * 100);
     } else {
       dom.jumpChargeContainer.classList.remove("visible");
-      dom.jumpChargeBar.style.height = "0%";
+      dom.jumpChargeBar.value = 0;
     }
     requestAnimationFrame(checkJumpCharge);
   };
