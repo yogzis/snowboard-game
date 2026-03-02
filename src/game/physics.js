@@ -313,8 +313,10 @@ export function updatePhysics(dt, state, callbacks) {
     const maxF = CONFIG.physics.jumpForceMax != null ? CONFIG.physics.jumpForceMax : 0.58;
     const c = Math.max(0, Math.min(1, state.input.jumpCharge));
     const force = shortF + (maxF - shortF) * c;
+    const chargeThreshold = CONFIG.physics.jumpChargeThresholdForFloating != null ? CONFIG.physics.jumpChargeThresholdForFloating : 0.5;
     stats.isJumping = true;
     stats.didJumpThisAirtime = true;
+    stats.didChargedJumpThisAirtime = c >= chargeThreshold;
     stats.rampLaunchFramesAgo = null;
     stats.canRampAssistJump = false;
     vel.y = force * REF_FPS;
@@ -333,11 +335,14 @@ export function updatePhysics(dt, state, callbacks) {
   if (stats.isJumping) {
     if (stats.rampLaunchFramesAgo != null) stats.rampLaunchFramesAgo += dt;
     pos.y += vel.y * dt;
-    vel.y -= CONFIG.physics.gravity * REF_FPS * REF_FPS * dt;
+    const gravityScale = stats.glideActiveThisAirtime ? (CONFIG.physics.glideGravityScale ?? 0.25) : 1;
+    vel.y -= CONFIG.physics.gravity * gravityScale * REF_FPS * REF_FPS * dt;
     if (pos.y <= 0) {
       pos.y = 0;
       stats.isJumping = false;
       stats.didJumpThisAirtime = false;
+      stats.didChargedJumpThisAirtime = false;
+      stats.glideActiveThisAirtime = false;
       stats.rampLaunchFramesAgo = null;
       stats.canRampAssistJump = false;
       vel.y = 0;

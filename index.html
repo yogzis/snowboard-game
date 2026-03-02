@@ -113,23 +113,15 @@
         letter-spacing: 2px;
       }
 
-      /* Jump charge bar: vertical, right of character, visible while holding */
+      /* Jump charge bar: right of character, visible while holding. Tune position via right/top. */
       #jump-charge-container {
         position: absolute;
         right: 40%;
         top: 60%;
         transform: translateY(-50%);
-        width: 28px;
-        height: 200px;
-        background: rgba(0, 0, 0, 0.5);
-        border: 3px solid #1dd1a1;
-        border-radius: 14px;
-        overflow: hidden;
         display: flex;
-        align-items: flex-end;
-        box-shadow:
-          0 0 20px #1dd1a1,
-          0 0 10px #00d26a;
+        align-items: center;
+        justify-content: center;
         opacity: 0;
         pointer-events: none;
         transition: opacity 0.15s;
@@ -137,12 +129,48 @@
       #jump-charge-container.visible {
         opacity: 1;
       }
-      #jump-charge-bar {
-        width: 100%;
-        height: 0%;
-        min-height: 0;
-        background: linear-gradient(to top, #00d26a, #1dd1a1);
-        transition: height 0.03s linear;
+      /*
+       * Jump charge bar: vertical, compact. Tuning knobs:
+       * - Size: --jump-bar-width (thickness), --jump-bar-height (length) below
+       * - Border: border thickness (0.15em), color (#242b35), border-radius
+       * - Fill colors: --jump-fill (purple gradients)
+       * - Position: #jump-charge-container right/top above
+       */
+      progress.purple-jump {
+        position: relative;
+        top: 50px;
+        left: 35px;
+        --jump-bar-width: 2.75em;
+        --jump-bar-height: 0.35em;
+        --jump-fill:
+          linear-gradient(rgba(215, 131, 227, 0.5), transparent),
+          conic-gradient(from -30deg at 25%, transparent 240deg, #8b42ab 0%) 0 /
+            0.7em,
+          conic-gradient(from -30deg at 75%, #8b42ab 240deg, #9956b3 0%) 0 /
+            0.7em;
+        box-sizing: border-box;
+        border: 0 solid #242b35;
+        width: var(--jump-bar-width);
+        height: var(--jump-bar-height);
+        border-radius: 0.5em;
+        background: none;
+        font: clamp(0.625em, 7.5vw, 5em) monospace;
+        /* Vertical bar: fill grows bottom-to-top */
+        transform: rotate(-90deg);
+        transform-origin: center center;
+      }
+      progress.purple-jump::-webkit-progress-bar {
+        background: transparent;
+      }
+      progress.purple-jump::-webkit-progress-value {
+        border-radius: 0.35em;
+        box-shadow: inset 0 0.05em 0.05em rgba(255, 255, 255, 0.35);
+        background: var(--jump-fill);
+      }
+      progress.purple-jump::-moz-progress-bar {
+        border-radius: 0.35em;
+        box-shadow: inset 0 0.05em 0.05em rgba(255, 255, 255, 0.35);
+        background: var(--jump-fill);
       }
 
       #score-display span {
@@ -543,7 +571,12 @@
       </div>
       <div id="notification-area"></div>
       <div id="jump-charge-container">
-        <div id="jump-charge-bar"></div>
+        <progress
+          id="jump-charge-bar"
+          class="purple-jump"
+          value="0"
+          max="100"
+        ></progress>
       </div>
     </div>
 
@@ -553,7 +586,9 @@
       <p class="subtitle">Jump, Dodge, and Survive the Slope!</p>
       <div class="start-btn-wrap">
         <button class="btn" id="start-btn" type="button">Hit the Slopes</button>
-        <a class="btn btn-secondary" href="/character-test.html">Character test</a>
+        <a class="btn btn-secondary" href="/character-test.html"
+          >Character test</a
+        >
       </div>
       <div class="controls-hint">
         <table>

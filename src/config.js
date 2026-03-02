@@ -14,6 +14,7 @@ export const CONFIG = {
     boost: 0x2ecc71,
     shield: 0x00ffff,
     ramp: 0x95a5a6,
+    glideIndicator: 0x9b59b6,
   },
   physics: {
     maxSpeed: 0.85,
@@ -41,6 +42,8 @@ export const CONFIG = {
     jumpForceShort: 0.22,
     jumpChargeDurationMs: 600,
     jumpForceMax: 0.5,
+    /** Charge ratio (0–1) required to count as "charged jump" for floating boxes. */
+    jumpChargeThresholdForFloating: 0.5,
     rampForce: 0.4,
     rampAssistWindow: 50 / 60,
     rampAssistBoost: 0.32,
@@ -51,6 +54,8 @@ export const CONFIG = {
     spinOutSpinSpeed: (2 * Math.PI) / 20,
     /** Duration of the fall phase after the spin completes (seconds). */
     spinOutFallDuration: 0.8,
+    /** Gravity multiplier when gliding (slower fall). */
+    glideGravityScale: 0.6,
   },
   game: {
     maxHP: 100,
@@ -60,15 +65,21 @@ export const CONFIG = {
     dynamiteDamage: 85,
     boostDuration: 3,
     baseSpawnRate: 0.2,
+    /** Seconds of cumulative air time with reduced gravity when glide prize is won. */
+    glideDuration: 5,
   },
   world: {
     playAreaWidth: 72,
     obstacleZoneMargin: 8,
+    floatingBoxHeight: 3.5,
+    floatingBoxBreakHeight: 3.0,
   },
   // Set to { logCharacterLoad: true } to log character load/apply diagnostics.
   debug: { logCharacterLoad: true },
   /** Optional rendering overrides. Omit or set fog.enabled: false to reduce fog so HDR sky is dominant. */
   rendering: {
+    /** Roll (tilt) applied when steering: container rotation.z = -playerAngle * steeringTiltScale. Increase for more lean, decrease for subtler tilt (e.g. 0.2–0.5). */
+    steeringTiltScale: -0.3,
     fog: {
       enabled: true,
       start: 50,
