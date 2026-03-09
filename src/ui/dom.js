@@ -1,3 +1,11 @@
+export function showElement(element) {
+  if (element) element.classList.remove("hidden");
+}
+
+export function hideElement(element) {
+  if (element) element.classList.add("hidden");
+}
+
 export const startBtn = document.getElementById("start-btn");
 export const menuOverlay = document.getElementById("menu-overlay");
 export const pauseMenu = document.getElementById("pause-menu");
