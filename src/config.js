@@ -1,3 +1,9 @@
+/** Convert hex color (e.g. 0x20b2aa) to CSS string (#20b2aa) for DOM use. */
+export function hexToCss(hex) {
+  const h = Number(hex).toString(16).padStart(6, "0");
+  return "#" + h;
+}
+
 export const CONFIG = {
   colors: {
     sky: 0x87ceeb,
@@ -15,6 +21,7 @@ export const CONFIG = {
     shield: 0x00ffff,
     ramp: 0x95a5a6,
     glideIndicator: 0x9b59b6,
+    glideSurface: 0x20b2aa,
   },
   physics: {
     maxSpeed: 0.85,

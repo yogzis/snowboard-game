@@ -1,4 +1,4 @@
-import { CONFIG } from "../config.js";
+import { CONFIG, hexToCss } from "../config.js";
 import { REF_FPS } from "./state.js";
 
 export function spawnObstacle(zPos, xPosOverride, typeOverride, state) {
@@ -257,7 +257,7 @@ export function breakBox(ob, state, callbacks) {
       callbacks.triggerNotification("SUPER SHIELD!", "#00ffff");
     } else {
       stats.hasGlide = true;
-      callbacks.triggerNotification("GLIDE!", "#9b59b6");
+      callbacks.triggerNotification("GLIDE!", hexToCss(CONFIG.colors?.glideSurface ?? 0x20b2aa));
     }
   } else {
     if (rand < 0.18) {
@@ -293,7 +293,7 @@ export function breakBox(ob, state, callbacks) {
       callbacks.triggerNotification("SHIELD ACTIVE!", "#00ffff");
     } else {
       stats.hasGlide = true;
-      callbacks.triggerNotification("GLIDE!", "#9b59b6");
+      callbacks.triggerNotification("GLIDE!", hexToCss(CONFIG.colors?.glideSurface ?? 0x20b2aa));
     }
   }
 }
