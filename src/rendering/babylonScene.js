@@ -22,7 +22,7 @@ import {
   AnimationGroupMaskMode,
 } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
-import { CONFIG } from "../config.js";
+import { CONFIG, hexToRgb } from "../config.js";
 import {
   CHARACTER_ANIMATION_CONFIG,
   createInitialAnimationRuntime,
@@ -60,9 +60,7 @@ function createMogulHeightMapBuffer(width, height) {
 }
 
 function hexToColor3(hex) {
-  const r = ((hex >> 16) & 255) / 255;
-  const g = ((hex >> 8) & 255) / 255;
-  const b = (hex & 255) / 255;
+  const { r, g, b } = hexToRgb(hex);
   return new Color3(r, g, b);
 }
 

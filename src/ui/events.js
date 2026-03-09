@@ -8,7 +8,17 @@ export function bindInput(state) {
   document.addEventListener("touchend", (e) => handleTouchEnd(state, e));
 }
 
-export function bindButtons(onStart, onPause, onResume, onHints, onHintsBack, onHintsResume, onExit, onExitCancel, onExitConfirm) {
+export function bindButtons({
+  onStart,
+  onPause,
+  onResume,
+  onHints,
+  onHintsBack,
+  onHintsResume,
+  onExit,
+  onExitCancel,
+  onExitConfirm,
+}) {
   dom.pauseBtn?.addEventListener("click", (e) => { e.stopPropagation(); dom.pauseBtn?.blur(); onPause(); });
   dom.resumeBtn?.addEventListener("click", (e) => { e.stopPropagation(); dom.resumeBtn?.blur(); onResume(); });
   dom.hintsBtn?.addEventListener("click", (e) => { e.stopPropagation(); dom.hintsBtn?.blur(); onHints(); });
@@ -24,7 +34,7 @@ export function bindGlobalKeys(getState, togglePause, onStart) {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       if (dom.hintsOverlay && !dom.hintsOverlay.classList.contains("hidden")) {
-        dom.hintsOverlay.classList.add("hidden");
+        dom.hideElement(dom.hintsOverlay);
       } else {
         togglePause();
       }

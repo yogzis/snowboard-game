@@ -4,6 +4,104 @@ export function hexToCss(hex) {
   return "#" + h;
 }
 
+/** Convert hex color to RGB components in 0–1 range. Use with Babylon Color3(r, g, b). */
+export function hexToRgb(hex) {
+  const value = Number(hex);
+  return {
+    r: ((value >> 16) & 255) / 255,
+    g: ((value >> 8) & 255) / 255,
+    b: (value & 255) / 255,
+  };
+}
+
+/** Returns config value if defined, otherwise fallback. Use for optional CONFIG overrides. */
+export function getConfigValue(obj, key, fallback) {
+  const value = obj?.[key];
+  return value != null ? value : fallback;
+}
+
+export const PHYSICS_CONSTANTS = {
+  spinOutDecelFactor: 0.3,
+  spinOutSpeedThreshold: 0.02,
+  spinOutAngleEpsilon: 1e-3,
+  boostInterpolationFactor: 0.12,
+  marginFriction: 0.97,
+  turnRatioStopDriftFriction: 0.98,
+  overMaxSpeedFriction: 0.99,
+  angleMagnitudeBase: 1.6,
+  angleMagnitudeExponent: 1.2,
+  angleMagnitudeMin: 0.2,
+  steerInterpolationSpeed: 0.15,
+  leanBackInterpolation: 0.12,
+  invincibleFadeStartSeconds: 2,
+  invincibleFlickerStartSeconds: 5,
+  shieldOpacityMax: 0.3,
+  shieldFlickerPhaseIncrement: 0.2,
+  shieldOpacityMin: 0.05,
+  dynamiteExplosionParticleCount: 30,
+  boostTrailSpawnIntervalFrames: 4,
+  boostTrailMinSpeed: 0.1,
+  boostTrailHeight: 0.01,
+  snowSprayAngleThreshold: 0.3,
+  snowSpraySpeedThreshold: 0.2,
+  worldGroundOffset: 20,
+  dynamiteDefuseJumpCount: 2,
+  dynamiteOffsetFromPlayer: 1.6,
+  dynamiteSparkVelocitySpread: 0.15,
+  dynamiteSparkVelocityYMin: 0.05,
+  dynamiteSparkVelocityYRange: 0.12,
+  dynamiteSparkPositionJitter: 0.2,
+  snowSprayVelocitySpread: 0.2,
+  speedThresholdMoving: 0.001,
+  boxBreakBounceVelocity: 0.3,
+  damageSpeedMultiplier: 0.5,
+  damagePositionBump: 0.2,
+  lifeLostInvincibleDuration: 2,
+  lifeLostShieldPulseTime: 0.25,
+  treeRockObstacleDespawnOffset: 10,
+};
+
+export const OBSTACLE_CONSTANTS = {
+  spawnWeightRampCombo: 0.95,
+  spawnWeightBox: 0.78,
+  spawnWeightBoost: 0.72,
+  spawnWeightRock: 0.42,
+  floatingBoxProbability: 0.5,
+  rampSlotProbability: 0.7,
+  boostSlotProbability: 0.25,
+  treeOrRockProbability: 0.5,
+  chunkSlotJitter: 8,
+  chunkZOffsetRange: 6,
+  chunkSlots: 5,
+  spawnChunkDistanceThreshold: 90,
+  spawnChunkBaseOffset: 18,
+  spawnChunkRandomOffset: 8,
+  despawnObstacleOffset: 10,
+  obstacleHitRadiusPadding: 0.3,
+  rampComboBoxZOffset: 24,
+  rampComboBoxY: 6.5,
+  elevatedBoxBreakHeight: 6.0,
+  groundBoxHitHeight: 0.5,
+  boxBreakBounceVelocity: 0.3,
+  obstacleDamageAmount: 20,
+  shieldHitSpeedMultiplier: 0.5,
+  shieldHitPositionBump: 0.2,
+  shieldHitPulseDuration: 15,
+};
+
+export const PARTICLE_CONSTANTS = {
+  decayRate: 0.05,
+  effectScaleRate: 0.2,
+  effectOpacityDecay: 0.05,
+  boostTrailDecayRate: 0.02,
+  dynamiteSparkDecayRate: 0.08,
+};
+
+export const SPAWN_CONSTANTS = {
+  initialChunkCount: 25,
+  chunkSpacing: 10,
+};
+
 export const CONFIG = {
   colors: {
     sky: 0x87ceeb,
