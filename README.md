@@ -30,6 +30,22 @@ npm run build
 
 Output is in `dist/`. Serve that folder (e.g. `npx serve dist`) to run the production build.
 
+## Testing
+
+```bash
+npm run test              # Watch mode for development
+npm run test:run          # Single run (e.g. for CI)
+npm run test:run:report   # Single run with HTML report at test-results/report.html
+```
+
+To view the HTML report: `npx vite preview --outDir test-results`
+
+### GitHub CI
+
+The `.github/workflows/test.yml` workflow runs tests on every push and pull request to `main` and `development`. It produces a JUnit report and publishes results to the PR.
+
+To require tests to pass before merging: **Settings → Branches → Branch protection rules** for `main` and `development`, enable "Require status checks to pass" and select **Test**.
+
 ## Project Structure
 
 - `index.html` – Entry HTML and UI layout
