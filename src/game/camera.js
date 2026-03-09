@@ -1,5 +1,19 @@
 import { REF_FPS } from "./state.js";
 
+/** Updates camera target and lookAt from player position. Used during spin-out. */
+export function updateCameraFromPlayer(state) {
+  const pos = state.player.position;
+  state.camera.targetX = pos.x;
+  state.camera.targetZ = pos.z + 8;
+  state.camera.lookAt.x = pos.x;
+  state.camera.lookAt.y = pos.y;
+  state.camera.lookAt.z = pos.z - 5;
+}
+
+/**
+ * @param {number} dt - Delta time in seconds
+ * @param {object} state - Game state
+ */
 export function updateCamera(dt, state) {
   const pos = state.player.position;
   state.camera.targetX = pos.x;

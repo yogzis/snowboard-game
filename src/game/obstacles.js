@@ -1,14 +1,98 @@
-import { CONFIG } from "../config.js";
+import { CONFIG, hexToCss, OBSTACLE_CONSTANTS, getConfigValue } from "../config.js";
 import { REF_FPS } from "./state.js";
 
+const ELEVATED_BOX_POWER_UP_WEIGHTS = [
+  { max: 0.1, type: "dynamite" },
+  { max: 0.3, type: "megaBoost" },
+  { max: 0.7, type: "extraLifeOrHeal" },
+  { max: 0.85, type: "superShield" },
+  { max: 1.0, type: "glide" },
+];
+
+const NORMAL_BOX_POWER_UP_WEIGHTS = [
+  { max: 0.18, type: "dynamite" },
+  { max: 0.36, type: "boost" },
+  { max: 0.54, type: "hp" },
+  { max: 0.72, type: "extraLifeOrHeal" },
+  { max: 0.9, type: "shield" },
+  { max: 1.0, type: "glide" },
+];
+
+function rollPowerUp(rand, powerUpWeights, stats, state, gameCallbacks) {
+  for (const { max, type } of powerUpWeights) {
+    if (rand >= max) continue;
+    switch (type) {
+      case "dynamite":
+        if (!stats.hasDynamite) {
+          stats.hasDynamite = true;
+          stats.dynamiteTimer = CONFIG.game.dynamiteTime;
+          stats.dynamiteJumpCount = 0;
+          gameCallbacks.triggerNotification(
+            powerUpWeights === ELEVATED_BOX_POWER_UP_WEIGHTS ? "TRAP! JUMP x2!" : "DYNAMITE! Jump x2 Straight to Remove!",
+            "#e74c3c"
+          );
+          gameCallbacks.triggerDynamiteFlash();
+        }
+        return;
+      case "megaBoost":
+        stats.boostTimer = CONFIG.game.boostDuration;
+        stats.boostTargetSpeed = CONFIG.physics.boostSpeed * 1.15;
+        gameCallbacks.triggerNotification("MEGA BOOST!");
+        return;
+      case "boost":
+        stats.boostTimer = CONFIG.game.boostDuration;
+        stats.boostTargetSpeed = CONFIG.physics.boostSpeed;
+        gameCallbacks.triggerNotification("SPEED BOOST!");
+        return;
+      case "hp":
+        stats.hp = Math.min(stats.hp + 30, CONFIG.game.maxHP);
+        gameCallbacks.updateUI(state);
+        gameCallbacks.triggerNotification("+30 HP", "#2ecc71");
+        return;
+      case "extraLifeOrHeal":
+        if (stats.lives < CONFIG.game.maxLives) {
+          stats.lives++;
+          gameCallbacks.updateUI(state);
+          gameCallbacks.triggerNotification("EXTRA LIFE!", "#e67e22");
+        } else {
+          stats.hp = 100;
+          gameCallbacks.updateUI(state);
+          gameCallbacks.triggerNotification("FULL HEAL!", "#2ecc71");
+        }
+        return;
+      case "superShield":
+        stats.invincibleTimer = CONFIG.game.invincibleTime * 1.5;
+        state.visuals.shieldPulseTime = 0;
+        state.visuals.shieldFlickerPhase = 0;
+        gameCallbacks.triggerNotification("SUPER SHIELD!", "#00ffff");
+        return;
+      case "shield":
+        stats.invincibleTimer = CONFIG.game.invincibleTime;
+        state.visuals.shieldPulseTime = 0;
+        state.visuals.shieldFlickerPhase = 0;
+        gameCallbacks.triggerNotification("SHIELD ACTIVE!", "#00ffff");
+        return;
+      case "glide":
+        stats.hasGlide = true;
+        gameCallbacks.triggerNotification("GLIDE!", hexToCss(CONFIG.colors?.glideSurface ?? 0x20b2aa));
+        return;
+    }
+  }
+}
+
+/**
+ * @param {number} zPos - Z position for the obstacle
+ * @param {number} [xPosOverride] - Optional X position override
+ * @param {string} [typeOverride] - Optional obstacle type override
+ */
 export function spawnObstacle(zPos, xPosOverride, typeOverride, state) {
   const rand = Math.random();
   let type = typeOverride;
   if (type === undefined) {
-    if (rand > 0.95) type = "ramp_combo";
-    else if (rand > 0.78) type = "box";
-    else if (rand > 0.72) type = "boost";
-    else if (rand > 0.42) type = "rock";
+    if (rand > OBSTACLE_CONSTANTS.spawnWeightRampCombo) type = "ramp_combo";
+    else if (rand > OBSTACLE_CONSTANTS.spawnWeightBox) type = "box";
+    else if (rand > OBSTACLE_CONSTANTS.spawnWeightBoost) type = "boost";
+    else if (rand > OBSTACLE_CONSTANTS.spawnWeightRock) type = "rock";
     else type = "tree";
   }
 
@@ -26,7 +110,7 @@ export function spawnObstacle(zPos, xPosOverride, typeOverride, state) {
     state.obstacles.push({
       id: state.nextObstacleId++,
       type: "box",
-      position: { x: xPos, y: 6.5, z: zPos - 24 },
+      position: { x: xPos, y: OBSTACLE_CONSTANTS.rampComboBoxY, z: zPos - OBSTACLE_CONSTANTS.rampComboBoxZOffset },
       rotation: { x: 0, y: 0, z: 0 },
       userData: { radius: 2.0, height: 7.25, breakHeight: 6.0, isElevated: true },
       rotationVel: { x: 0.02, y: 0.03, z: 0 },
@@ -34,7 +118,7 @@ export function spawnObstacle(zPos, xPosOverride, typeOverride, state) {
     return;
   }
 
-  const ob = {
+  const obstacle = {
     id: state.nextObstacleId++,
     type,
     position: { x: xPos, y: 0, z: zPos },
@@ -47,131 +131,195 @@ export function spawnObstacle(zPos, xPosOverride, typeOverride, state) {
   };
 
   if (type === "tree") {
-    ob.position.y = 0;
-    ob.userData = { radius: 0.8, height: 3 };
+    obstacle.position.y = 0;
+    obstacle.userData = { radius: 0.8, height: 3 };
   } else if (type === "rock") {
-    ob.position.y = 0.4;
-    ob.userData = { radius: 0.6, height: 1 };
+    obstacle.position.y = 0.4;
+    obstacle.userData = { radius: 0.6, height: 1 };
   } else if (type === "boost") {
-    ob.position.y = 0;
-    ob.userData = { radius: 1.5, height: 0.1 };
+    obstacle.position.y = 0;
+    obstacle.userData = { radius: 1.5, height: 0.1 };
   } else if (type === "box") {
-    ob.position.y = 2;
-    ob.userData = { radius: 1.2, height: 2.5 };
-    ob.rotationVel = { x: 0.02, y: 0.03, z: 0 };
+    const isFloating = Math.random() < OBSTACLE_CONSTANTS.floatingBoxProbability;
+    if (isFloating) {
+      obstacle.position.y = getConfigValue(CONFIG.world, "floatingBoxHeight", 3.5);
+      obstacle.userData = {
+        radius: 1.2,
+        height: 4,
+        breakHeight: getConfigValue(CONFIG.world, "floatingBoxBreakHeight", 3.0),
+        isFloating: true,
+      };
+    } else {
+      obstacle.position.y = 2;
+      obstacle.userData = { radius: 1.2, height: 2.5 };
+    }
+    obstacle.rotationVel = { x: 0.02, y: 0.03, z: 0 };
   }
 
-  state.obstacles.push(ob);
+  state.obstacles.push(obstacle);
+}
+
+function showMissedNotification(obstacle, gameCallbacks) {
+  if (obstacle.missedNotificationShown) return;
+  obstacle.missedNotificationShown = true;
+  gameCallbacks.triggerNotification("Not this time...", "#95a5a6");
+}
+
+function handleBoostCollision(obstacle, state, gameCallbacks, obstacleIndex) {
+  if (state.playerStats.isJumping) return;
+  state.playerStats.boostTimer = CONFIG.game.boostDuration;
+  state.playerStats.boostTargetSpeed = CONFIG.physics.boostSpeed;
+  gameCallbacks.triggerNotification("BOOST!");
+  state.obstacles.splice(obstacleIndex, 1);
+}
+
+function handleRampCollision(obstacle, state, gameCallbacks) {
+  if (state.playerStats.isJumping) return;
+  state.playerStats.isJumping = true;
+  state.playerStats.didJumpThisAirtime = false;
+  state.playerStats.rampLaunchFramesAgo = 0;
+  state.playerStats.canRampAssistJump = true;
+  if (state.playerStats.hasGlide) {
+    state.playerStats.hasGlide = false;
+    state.playerStats.glideActiveThisAirtime = true;
+  }
+  state.player.velocity.y = CONFIG.physics.rampForce * REF_FPS;
+  gameCallbacks.triggerNotification("Sweet! That's an AIR TIME!");
+}
+
+function handleBoxCollision(obstacle, state, gameCallbacks) {
+  const pos = state.player.position;
+  const stats = state.playerStats;
+  const isElevated = obstacle.userData.isElevated;
+  const isFloating = obstacle.userData.isFloating;
+
+  let hitHeight;
+  if (isFloating) {
+    hitHeight = obstacle.userData.breakHeight != null ? obstacle.userData.breakHeight : getConfigValue(CONFIG.world, "floatingBoxBreakHeight", 3.0);
+  } else if (isElevated) {
+    hitHeight = obstacle.userData.breakHeight != null ? obstacle.userData.breakHeight : OBSTACLE_CONSTANTS.elevatedBoxBreakHeight;
+  } else {
+    hitHeight = OBSTACLE_CONSTANTS.groundBoxHitHeight;
+  }
+
+  if (pos.y > hitHeight) {
+    if (isFloating && !stats.didChargedJumpThisAirtime) {
+      showMissedNotification(obstacle, gameCallbacks);
+      return;
+    }
+    if (isElevated && !stats.didJumpThisAirtime) {
+      showMissedNotification(obstacle, gameCallbacks);
+      return;
+    }
+    breakBox(obstacle, state, gameCallbacks);
+    state.player.velocity.y = OBSTACLE_CONSTANTS.boxBreakBounceVelocity * REF_FPS;
+  } else {
+    if (isFloating) {
+      showMissedNotification(obstacle, gameCallbacks);
+      return;
+    }
+    if (isElevated && !obstacle.missedNotificationShown) {
+      showMissedNotification(obstacle, gameCallbacks);
+      return;
+    }
+    breakBox(obstacle, state, gameCallbacks);
+  }
+}
+
+function handleTreeRockCollision(obstacle, state, gameCallbacks, obstacleIndex) {
+  const pos = state.player.position;
+  const stats = state.playerStats;
+
+  if (pos.y > obstacle.userData.height) {
+    return;
+  }
+
+  state.obstacles.splice(obstacleIndex, 1);
+  if (stats.invincibleTimer > 0) {
+    state.speed *= OBSTACLE_CONSTANTS.shieldHitSpeedMultiplier;
+    gameCallbacks.shakeCamera();
+    pos.y += OBSTACLE_CONSTANTS.shieldHitPositionBump;
+    state.visuals.shieldPulseTime = OBSTACLE_CONSTANTS.shieldHitPulseDuration / REF_FPS;
+    gameCallbacks.triggerNotification("SHIELD!", "#00ffff");
+  } else {
+    gameCallbacks.takeDamage(OBSTACLE_CONSTANTS.obstacleDamageAmount);
+  }
 }
 
 export function spawnChunk(zBase, state) {
   const half = CONFIG.world.playAreaWidth / 2;
-  const slots = 5;
+  const slots = OBSTACLE_CONSTANTS.chunkSlots;
   const step = CONFIG.world.playAreaWidth / (slots + 1);
   const xSlots = [];
   for (let i = 0; i < slots; i++) {
-    xSlots.push(-half + step * (i + 1) + (Math.random() - 0.5) * 8);
+    xSlots.push(-half + step * (i + 1) + (Math.random() - 0.5) * OBSTACLE_CONSTANTS.chunkSlotJitter);
   }
   const boxSlot = Math.floor(Math.random() * slots);
-  const rampSlot = Math.random() > 0.7 ? Math.floor(Math.random() * slots) : -1;
-  const boostSlot = Math.random() < 0.25 ? Math.floor(Math.random() * slots) : -1;
+  const rampSlot = Math.random() > OBSTACLE_CONSTANTS.rampSlotProbability ? Math.floor(Math.random() * slots) : -1;
+  const boostSlot = Math.random() < OBSTACLE_CONSTANTS.boostSlotProbability ? Math.floor(Math.random() * slots) : -1;
   for (let i = 0; i < slots; i++) {
-    let type = Math.random() > 0.5 ? "tree" : "rock";
+    let type = Math.random() > OBSTACLE_CONSTANTS.treeOrRockProbability ? "tree" : "rock";
     if (i === boxSlot) type = "box";
     else if (i === rampSlot) type = "ramp_combo";
     else if (i === boostSlot) type = "boost";
-    const zOffset = (Math.random() - 0.5) * 6;
+    const zOffset = (Math.random() - 0.5) * OBSTACLE_CONSTANTS.chunkZOffsetRange;
     spawnObstacle(zBase + zOffset, xSlots[i], type, state);
   }
 }
 
-export function updateObstacles(dt, state, callbacks) {
+/**
+ * @param {number} dt - Delta time in seconds
+ * @param {object} state - Game state
+ * @param {object} gameCallbacks - Callbacks for notifications, damage, etc.
+ */
+export function updateObstacles(dt, state, gameCallbacks) {
   const pos = state.player.position;
   const lastZ = state.obstacles.length > 0
     ? state.obstacles[state.obstacles.length - 1].position.z
     : pos.z;
-  if (lastZ > pos.z - 90) {
-    spawnChunk(lastZ - 18 - Math.random() * 8, state);
+  if (lastZ > pos.z - OBSTACLE_CONSTANTS.spawnChunkDistanceThreshold) {
+    spawnChunk(lastZ - OBSTACLE_CONSTANTS.spawnChunkBaseOffset - Math.random() * OBSTACLE_CONSTANTS.spawnChunkRandomOffset, state);
   }
 
   const dt60 = dt * REF_FPS;
   for (let i = state.obstacles.length - 1; i >= 0; i--) {
-    const ob = state.obstacles[i];
-    if (ob.rotationVel) {
-      ob.rotation.x += ob.rotationVel.x * dt60;
-      ob.rotation.y += ob.rotationVel.y * dt60;
+    const obstacle = state.obstacles[i];
+    if (obstacle.rotationVel) {
+      obstacle.rotation.x += obstacle.rotationVel.x * dt60;
+      obstacle.rotation.y += obstacle.rotationVel.y * dt60;
     }
-    if (ob.type === "boost" && ob.arrowPhase != null) {
-      ob.arrowPhase += 0.04 * dt60;
-      ob.arrowZ = (ob.arrowZ != null ? ob.arrowZ : 0) - 0.04 * dt60;
-      if (ob.arrowZ < -3) ob.arrowZ += 6;
+    if (obstacle.type === "boost" && obstacle.arrowPhase != null) {
+      obstacle.arrowPhase += 0.04 * dt60;
+      obstacle.arrowZ = (obstacle.arrowZ != null ? obstacle.arrowZ : 0) - 0.04 * dt60;
+      if (obstacle.arrowZ < -3) obstacle.arrowZ += 6;
     }
 
-    if (ob.position.z > pos.z + 10) {
+    if (obstacle.position.z > pos.z + OBSTACLE_CONSTANTS.despawnObstacleOffset) {
       state.obstacles.splice(i, 1);
     } else {
-      const dx = ob.position.x - pos.x;
-      const dz = ob.position.z - pos.z;
+      const dx = obstacle.position.x - pos.x;
+      const dz = obstacle.position.z - pos.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
-      const hitRadius = ob.userData.radius + 0.3;
-      if (dist < hitRadius) {
-        if (ob.type === "boost") {
-          state.playerStats.boostTimer = CONFIG.game.boostDuration;
-          state.playerStats.boostTargetSpeed = CONFIG.physics.boostSpeed;
-          callbacks.triggerNotification("BOOST!");
-        } else if (ob.type === "ramp") {
-          state.playerStats.isJumping = true;
-          state.playerStats.didJumpThisAirtime = false;
-          state.playerStats.rampLaunchFramesAgo = 0;
-          state.playerStats.canRampAssistJump = true;
-          state.player.velocity.y = CONFIG.physics.rampForce * REF_FPS;
-          callbacks.triggerNotification("Sweet! That's an AIR TIME!");
-        } else if (ob.type === "box") {
-          const isElevated = ob.userData.isElevated;
-          const hitHeight = isElevated ? (ob.userData.breakHeight != null ? ob.userData.breakHeight : 6.0) : 2.0 - 1.5;
-          if (pos.y > hitHeight) {
-            if (isElevated && !state.playerStats.didJumpThisAirtime) {
-              if (!ob.missedNotificationShown) {
-                ob.missedNotificationShown = true;
-                callbacks.triggerNotification("Not this time...", "#95a5a6");
-              }
-            } else {
-              breakBox(ob, state, callbacks);
-              state.player.velocity.y = 0.3 * REF_FPS;
-            }
-          } else {
-            if (isElevated && !ob.missedNotificationShown) {
-              ob.missedNotificationShown = true;
-              callbacks.triggerNotification("Not this time...", "#95a5a6");
-            } else {
-              state.obstacles.splice(i, 1);
-            }
-          }
-        } else {
-          if (pos.y > ob.userData.height) {
-            // jumped over
-          } else {
-            state.obstacles.splice(i, 1);
-            if (state.playerStats.invincibleTimer > 0) {
-              state.speed *= 0.5;
-              callbacks.shakeCamera();
-              pos.y += 0.2;
-              state.visuals.shieldPulseTime = 15 / REF_FPS;
-              callbacks.triggerNotification("SHIELD!", "#00ffff");
-            } else {
-              callbacks.takeDamage(20);
-            }
-          }
-        }
+      const hitRadius = obstacle.userData.radius + OBSTACLE_CONSTANTS.obstacleHitRadiusPadding;
+      if (dist >= hitRadius) continue;
+
+      if (obstacle.type === "boost") {
+        handleBoostCollision(obstacle, state, gameCallbacks, i);
+      } else if (obstacle.type === "ramp") {
+        handleRampCollision(obstacle, state, gameCallbacks);
+      } else if (obstacle.type === "box") {
+        handleBoxCollision(obstacle, state, gameCallbacks);
+      } else {
+        handleTreeRockCollision(obstacle, state, gameCallbacks, i);
       }
     }
   }
 }
 
-export function breakBox(ob, state, callbacks) {
-  state.obstacles = state.obstacles.filter((o) => o.id !== ob.id);
-  const isElevated = ob.userData.isElevated;
-  const boxPos = ob.position;
+export function breakBox(obstacle, state, gameCallbacks) {
+  state.obstacles = state.obstacles.filter((o) => o.id !== obstacle.id);
+  const isElevated = obstacle.userData.isElevated;
+  const boxPos = obstacle.position;
 
   state.effectsToAdd.push({ type: "ring", position: { ...boxPos }, scale: 1, opacity: 0.8, inner: isElevated ? 1.2 : 1, outer: isElevated ? 1.8 : 1.5, color: isElevated ? 0xffd700 : 0xffff00 });
   if (isElevated) {
@@ -193,68 +341,6 @@ export function breakBox(ob, state, callbacks) {
 
   const rand = Math.random();
   const stats = state.playerStats;
-
-  if (isElevated) {
-    if (rand < 0.1) {
-      if (!stats.hasDynamite) {
-        stats.hasDynamite = true;
-        stats.dynamiteTimer = CONFIG.game.dynamiteTime;
-        stats.dynamiteJumpCount = 0;
-        callbacks.triggerNotification("TRAP! JUMP x2!", "#e74c3c");
-        callbacks.triggerDynamiteFlash();
-      }
-    } else if (rand < 0.3) {
-      stats.boostTimer = CONFIG.game.boostDuration;
-      stats.boostTargetSpeed = CONFIG.physics.boostSpeed * 1.15;
-      callbacks.triggerNotification("MEGA BOOST!");
-    } else if (rand < 0.7) {
-      if (stats.lives < CONFIG.game.maxLives) {
-        stats.lives++;
-        callbacks.updateUI(state);
-        callbacks.triggerNotification("EXTRA LIFE!", "#e67e22");
-      } else {
-        stats.hp = 100;
-        callbacks.updateUI(state);
-        callbacks.triggerNotification("FULL HEAL!", "#2ecc71");
-      }
-    } else {
-      stats.invincibleTimer = CONFIG.game.invincibleTime * 1.5;
-      state.visuals.shieldPulseTime = 0;
-      state.visuals.shieldFlickerPhase = 0;
-      callbacks.triggerNotification("SUPER SHIELD!", "#00ffff");
-    }
-  } else {
-    if (rand < 0.2) {
-      if (!stats.hasDynamite) {
-        stats.hasDynamite = true;
-        stats.dynamiteTimer = CONFIG.game.dynamiteTime;
-        stats.dynamiteJumpCount = 0;
-        callbacks.triggerNotification("DYNAMITE! Jump x2 Straight to Remove!", "#e74c3c");
-        callbacks.triggerDynamiteFlash();
-      }
-    } else if (rand < 0.4) {
-      stats.boostTimer = CONFIG.game.boostDuration;
-      stats.boostTargetSpeed = CONFIG.physics.boostSpeed;
-      callbacks.triggerNotification("SPEED BOOST!");
-    } else if (rand < 0.6) {
-      stats.hp = Math.min(stats.hp + 30, CONFIG.game.maxHP);
-      callbacks.updateUI(state);
-      callbacks.triggerNotification("+30 HP", "#2ecc71");
-    } else if (rand < 0.8) {
-      if (stats.lives < CONFIG.game.maxLives) {
-        stats.lives++;
-        callbacks.updateUI(state);
-        callbacks.triggerNotification("EXTRA LIFE!", "#e67e22");
-      } else {
-        stats.hp = 100;
-        callbacks.updateUI(state);
-        callbacks.triggerNotification("FULL HEAL!", "#2ecc71");
-      }
-    } else {
-      stats.invincibleTimer = CONFIG.game.invincibleTime;
-      state.visuals.shieldPulseTime = 0;
-      state.visuals.shieldFlickerPhase = 0;
-      callbacks.triggerNotification("SHIELD ACTIVE!", "#00ffff");
-    }
-  }
+  const powerUpWeights = isElevated ? ELEVATED_BOX_POWER_UP_WEIGHTS : NORMAL_BOX_POWER_UP_WEIGHTS;
+  rollPowerUp(rand, powerUpWeights, stats, state, gameCallbacks);
 }

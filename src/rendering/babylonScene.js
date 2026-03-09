@@ -22,7 +22,12 @@ import {
   AnimationGroupMaskMode,
 } from "@babylonjs/core";
 import "@babylonjs/loaders/glTF";
-import { CONFIG } from "../config.js";
+import { CONFIG, hexToRgb } from "../config.js";
+import {
+  CHARACTER_ANIMATION_CONFIG,
+  createInitialAnimationRuntime,
+  deriveCharacterAnimationDirectives,
+} from "../game/characterAnimations.js";
 
 let environmentHelper = null;
 let skyboxMesh = null;
@@ -55,14 +60,13 @@ function createMogulHeightMapBuffer(width, height) {
 }
 
 function hexToColor3(hex) {
-  const r = ((hex >> 16) & 255) / 255;
-  const g = ((hex >> 8) & 255) / 255;
-  const b = (hex & 255) / 255;
+  const { r, g, b } = hexToRgb(hex);
   return new Color3(r, g, b);
 }
 
 let engine, scene, camera, canvasEl;
-let playerRoot, playerMeshContainer, shieldMesh, dynamiteMesh;
+let playerRoot, playerMeshContainer, shieldMesh, dynamiteMesh, glideSurfaceMesh;
+let glideSurfaceOpacity = 0;
 /** Character visual: container (procedural) or glTF wrapper when loaded. Used for dispose only; sync is always via playerRoot/playerMeshContainer. */
 let characterRoot = null;
 /** "procedural" | "gltf" – whether characterRoot is the container or a glTF wrapper (affects dispose). */
@@ -74,6 +78,8 @@ let particleIdToMesh = new Map();
 let effectIdToMesh = new Map();
 let boostTrailIdToMesh = new Map();
 let dynamiteSparkIdToMesh = new Map();
+/** Cache of original colors for glTF character meshes when applying glide tint (restore when hasGlide becomes false). Key = material, value = { diffuseColor?, albedoColor? }. */
+let glideOriginalColors = new Map();
 
 /** Animation groups from the character GLB (set when glTF is applied). */
 let characterAnimationGroups = [];
@@ -85,15 +91,12 @@ let turnLeftAnimationGroup = null;
 let turnRightAnimationGroup = null;
 /** Reference to the "Fall" animation group, or null if not found. */
 let fallAnimationGroup = null;
-/** Smoothed cross-fade weights for turn animations (overlaid on Idle). */
-let currentTurnLeftWeight = 0;
-let currentTurnRightWeight = 0;
-let targetTurnLeftWeight = 0;
-let targetTurnRightWeight = 0;
-/** Track spin-out transitions so we can start/stop the Fall animation appropriately. */
-let wasSpinningOutLastFrame = false;
-/** When true, we snap pose/alignment on the next non-spinning frame after a fall. */
-let needsPostFallRealign = false;
+/** Reference to the brake-wave animation group (e.g. Start_Wave), or null if not found. */
+let brakeWaveAnimationGroup = null;
+/** One-time warn when brake-wave is requested but clip is missing. */
+let brakeWaveMissingWarned = false;
+/** Runtime state for animation decisions, shared across frames. */
+let characterAnimationRuntime = createInitialAnimationRuntime();
 
 /** Procedural body meshes (board, legs, torso, etc.). Replaced by glTF when loaded. */
 function createProceduralPlayer(scene, container) {
@@ -222,6 +225,23 @@ function createPlayerVisual(scene) {
   shield.isVisible = false;
   shield.parent = container;
 
+  const glideSurface = MeshBuilder.CreateDisc(
+    "glideSurface",
+    { radius: 1, tessellation: 32 },
+    scene,
+  );
+  glideSurface.rotation.x = Math.PI / 2;
+  const glideSurfaceMat = new StandardMaterial("glideSurfaceMat", scene);
+  glideSurfaceMat.diffuseColor = hexToColor3(
+    CONFIG.colors?.glideSurface ?? 0x20b2aa,
+  );
+  glideSurface.material = glideSurfaceMat;
+  glideSurface.position.y = 0;
+  glideSurface.scaling.x = 1.2;
+  glideSurface.scaling.z = 0.8;
+  glideSurface.isVisible = false;
+  glideSurface.parent = container;
+
   const dynStick = MeshBuilder.CreateCylinder(
     "dynStick",
     { height: 0.6, diameter: 0.2, tessellation: 16 },
@@ -295,6 +315,7 @@ function createPlayerVisual(scene) {
     container,
     shieldMesh: shield,
     dynamiteMesh: dynGroup,
+    glideSurfaceMesh: glideSurface,
     proceduralBodyMeshes,
   };
 }
@@ -366,14 +387,48 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
         const applyCharacter = () => {
           try {
             characterAnimationGroups = result.animationGroups || [];
+            const clips = CHARACTER_ANIMATION_CONFIG.clips;
             idleAnimationGroup =
-              characterAnimationGroups.find((ag) => ag.name === "Idle") ?? null;
+              characterAnimationGroups.find((ag) => ag.name === clips.idle) ??
+              null;
             turnLeftAnimationGroup =
-              characterAnimationGroups.find((ag) => ag.name === "Turn_Left") ?? null;
+              characterAnimationGroups.find(
+                (ag) => ag.name === clips.turnLeft,
+              ) ?? null;
             turnRightAnimationGroup =
-              characterAnimationGroups.find((ag) => ag.name === "Turn_Right") ?? null;
+              characterAnimationGroups.find(
+                (ag) => ag.name === clips.turnRight,
+              ) ?? null;
             fallAnimationGroup =
-              characterAnimationGroups.find((ag) => ag.name === "Fall") ?? null;
+              characterAnimationGroups.find((ag) => ag.name === clips.fall) ??
+              null;
+            brakeWaveMissingWarned = false;
+            brakeWaveAnimationGroup =
+              (clips.brakeWave &&
+                characterAnimationGroups.find(
+                  (ag) => ag.name === clips.brakeWave,
+                )) ??
+              null;
+            if (!brakeWaveAnimationGroup && clips.brakeWave) {
+              const used = new Set([
+                clips.idle,
+                clips.turnLeft,
+                clips.turnRight,
+                clips.fall,
+              ]);
+              brakeWaveAnimationGroup =
+                characterAnimationGroups.find(
+                  (ag) => ag && !used.has(ag.name) && /wave/i.test(ag.name),
+                ) ?? null;
+              if (logLoad && brakeWaveAnimationGroup) {
+                console.warn(
+                  "[character] brakeWave clip not found as",
+                  clips.brakeWave,
+                  "; using",
+                  brakeWaveAnimationGroup.name,
+                );
+              }
+            }
             if (logLoad && characterAnimationGroups.length > 0) {
               console.log(
                 "[character] animation names:",
@@ -394,18 +449,43 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
               }
             };
 
-            // Idle is the base layer, turn animations are overlays starting at 0 weight
-            configureGroup(idleAnimationGroup, 1);
-            configureGroup(turnLeftAnimationGroup, 0);
-            configureGroup(turnRightAnimationGroup, 0);
+            // Idle is the base layer, turn animations are overlays starting at 0 weight (one-shot on keydown).
+            // When config maps multiple slots to the same clip (e.g. idle and turnLeft both "Turn_Left"),
+            // set each unique group once to the max weight across the slots that use it.
+            const uniqueGroups = new Set(
+              [
+                idleAnimationGroup,
+                turnLeftAnimationGroup,
+                turnRightAnimationGroup,
+                fallAnimationGroup,
+                brakeWaveAnimationGroup,
+              ].filter(Boolean),
+            );
+            for (const group of uniqueGroups) {
+              let initialWeight = 0;
+              if (group === idleAnimationGroup) initialWeight = 1;
+              configureGroup(group, initialWeight);
+            }
+            if (
+              turnLeftAnimationGroup &&
+              "loopAnimation" in turnLeftAnimationGroup
+            )
+              turnLeftAnimationGroup.loopAnimation = false;
+            if (
+              turnRightAnimationGroup &&
+              "loopAnimation" in turnRightAnimationGroup
+            )
+              turnRightAnimationGroup.loopAnimation = false;
+            if (
+              brakeWaveAnimationGroup &&
+              "loopAnimation" in brakeWaveAnimationGroup
+            )
+              brakeWaveAnimationGroup.loopAnimation = true;
 
-            // Stop and zero weight for any other groups (e.g. Start_Wave) so only our clips run.
-            const controlledNames = new Set([
-              "Idle",
-              "Turn_Left",
-              "Turn_Right",
-              "Fall",
-            ]);
+            // Stop and zero weight for any other groups so only our clips run.
+            const controlledNames = new Set(
+              Object.values(CHARACTER_ANIMATION_CONFIG.clips),
+            );
             for (const ag of characterAnimationGroups) {
               if (!ag || controlledNames.has(ag.name)) continue;
               try {
@@ -554,9 +634,7 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
               );
               if (!boardMesh && nonSkinned.length > 0) {
                 const nameLike = nonSkinned.find(
-                  (m) =>
-                    m.name &&
-                    /board|snowboard|plane/i.test(m.name),
+                  (m) => m.name && /board|snowboard|plane/i.test(m.name),
                 );
                 if (nameLike) boardMesh = nameLike;
                 else if (nonSkinned.length === 1) boardMesh = nonSkinned[0];
@@ -600,21 +678,27 @@ function loadCharacterModel(scene, container, proceduralBodyMeshes) {
             characterMode = "gltf";
             // Default to Idle so we don't show start_wave. Idle runs as a base layer,
             // while turn animations are overlaid via weights.
-            if (idleAnimationGroup && typeof idleAnimationGroup.start === "function") {
+            if (
+              idleAnimationGroup &&
+              typeof idleAnimationGroup.start === "function"
+            ) {
               idleAnimationGroup.start(true);
             }
-            if (turnLeftAnimationGroup && typeof turnLeftAnimationGroup.start === "function") {
-              // Start once; kept at weight 0 until needed.
-              turnLeftAnimationGroup.start(true);
+            if (
+              turnLeftAnimationGroup &&
+              typeof turnLeftAnimationGroup.start === "function"
+            ) {
+              // Start once (no loop); kept at weight 0 until keydown triggers one-shot.
+              turnLeftAnimationGroup.start(false);
             }
-            if (turnRightAnimationGroup && typeof turnRightAnimationGroup.start === "function") {
-              // Start once; kept at weight 0 until needed.
-              turnRightAnimationGroup.start(true);
+            if (
+              turnRightAnimationGroup &&
+              typeof turnRightAnimationGroup.start === "function"
+            ) {
+              // Start once (no loop); kept at weight 0 until keydown triggers one-shot.
+              turnRightAnimationGroup.start(false);
             }
-            currentTurnLeftWeight = 0;
-            currentTurnRightWeight = 0;
-            targetTurnLeftWeight = 0;
-            targetTurnRightWeight = 0;
+            resetCharacterAnimationState();
             if (logLoad)
               console.log(
                 "[character] glTF applied; root parented to container",
@@ -1015,6 +1099,7 @@ export function init(container) {
   characterMode = "procedural";
   shieldMesh = player.shieldMesh;
   dynamiteMesh = player.dynamiteMesh;
+  glideSurfaceMesh = player.glideSurfaceMesh;
   dynamiteMesh.isVisible = false;
   scene.addMesh(playerRoot);
   if (shadowGenerator) shadowGenerator.addShadowCaster(playerRoot, true);
@@ -1031,10 +1116,70 @@ export function init(container) {
   return { getCanvas: () => canvasEl };
 }
 
+/**
+ * Resets character animation runtime (prev input, turn weights, spin-out history).
+ * Call this when switching scenarios on the test page so the new scenario applies immediately.
+ */
+export function resetCharacterAnimationState() {
+  characterAnimationRuntime = createInitialAnimationRuntime();
+  if (!characterAnimationGroups || characterAnimationGroups.length === 0)
+    return;
+
+  // Restore idle as the sole active clip. When config reuses the same clip for
+  // multiple slots (e.g. idle and turnLeft both "Turn_Left"), set each unique
+  // group once: idle group -> 1, others -> 0.
+  const uniqueControlled = new Set(
+    [
+      idleAnimationGroup,
+      turnLeftAnimationGroup,
+      turnRightAnimationGroup,
+      fallAnimationGroup,
+      brakeWaveAnimationGroup,
+    ].filter(Boolean),
+  );
+  for (const group of uniqueControlled) {
+    try {
+      const isIdleGroup = group === idleAnimationGroup;
+      if (typeof group.setWeightForAllAnimatables === "function")
+        group.setWeightForAllAnimatables(isIdleGroup ? 1 : 0);
+      if (!isIdleGroup) {
+        if (typeof group.stop === "function") group.stop();
+        if (typeof group.reset === "function") group.reset();
+      } else {
+        if (typeof group.stop === "function") group.stop();
+        if (typeof group.reset === "function") group.reset();
+        if (typeof group.start === "function") group.start(true);
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  const controlledNames = new Set(
+    Object.values(CHARACTER_ANIMATION_CONFIG.clips),
+  );
+  const groups = Array.isArray(characterAnimationGroups)
+    ? characterAnimationGroups
+    : [];
+  for (const ag of groups) {
+    if (!ag || controlledNames.has(ag.name)) continue;
+    try {
+      if (typeof ag.setWeightForAllAnimatables === "function")
+        ag.setWeightForAllAnimatables(0);
+      if (typeof ag.stop === "function") ag.stop();
+      if (typeof ag.reset === "function") ag.reset();
+    } catch {
+      /* best-effort */
+    }
+  }
+}
+
 export function syncFromState(state) {
   const p = state.player;
   const pos = p.position;
-  playerRoot.position.set(pos.x, pos.y, pos.z);
+  const hasGlide = Boolean(state.playerStats?.hasGlide);
+  const GLIDE_LIFT_Y = 0.05;
+  playerRoot.position.set(pos.x, pos.y + (hasGlide ? GLIDE_LIFT_Y : 0), pos.z);
   const spinOut = state.spinOut || {
     active: state.isSpinningOut,
     phase: state.isSpinningOut ? "SPINNING" : null,
@@ -1056,188 +1201,235 @@ export function syncFromState(state) {
       ? p.visualSpinAngle
       : p.angle;
   playerMeshContainer.rotation.y = visualY;
-  playerMeshContainer.rotation.z = -p.angle * 0.3;
+  const steeringTiltScale = CONFIG.rendering?.steeringTiltScale ?? 0.3;
+  playerMeshContainer.rotation.z = -p.angle * steeringTiltScale;
 
-  if (characterMode === "gltf" && (idleAnimationGroup || turnLeftAnimationGroup || turnRightAnimationGroup)) {
-    const phase = spinOut.phase;
-    const spinningOut = !!spinOut.active;
-    const inSpinPhase = phase === "SPINNING";
-    const inFallPhase = phase === "FALLING";
-
-    // Desired target weights based on input: turn animations overlay Idle.
-    const wantLeft =
-      !!state.input.left &&
-      !state.playerStats.isJumping &&
-      !spinningOut &&
-      !inFallPhase;
-    const wantRight =
-      !!state.input.right &&
-      !state.playerStats.isJumping &&
-      !spinningOut &&
-      !inFallPhase;
-
-    targetTurnLeftWeight = wantLeft ? 1 : 0;
-    targetTurnRightWeight = wantRight ? 1 : 0;
-
-    // Smoothly move current weights toward targets for a fluid feel.
-    const SMOOTHING = 0.25;
-    const lerp = (current, target) =>
-      current + (target - current) * SMOOTHING;
-
-    currentTurnLeftWeight = lerp(currentTurnLeftWeight, targetTurnLeftWeight);
-    currentTurnRightWeight = lerp(
-      currentTurnRightWeight,
-      targetTurnRightWeight,
+  if (
+    characterMode === "gltf" &&
+    (idleAnimationGroup ||
+      turnLeftAnimationGroup ||
+      turnRightAnimationGroup ||
+      brakeWaveAnimationGroup)
+  ) {
+    const { directives, nextRuntime } = deriveCharacterAnimationDirectives(
+      state,
+      characterAnimationRuntime,
+      spinOut,
     );
+    characterAnimationRuntime = nextRuntime;
 
-    // Clamp and snap tiny values to zero to avoid lingering influences.
-    const EPS = 0.001;
-    if (Math.abs(currentTurnLeftWeight) < EPS) currentTurnLeftWeight = 0;
-    else if (currentTurnLeftWeight > 1) currentTurnLeftWeight = 1;
-    if (Math.abs(currentTurnRightWeight) < EPS) currentTurnRightWeight = 0;
-    else if (currentTurnRightWeight > 1) currentTurnRightWeight = 1;
-
-    // Apply weights: Idle stays as base pose; turn groups fade in/out over it.
-    if (
-      idleAnimationGroup &&
-      typeof idleAnimationGroup.setWeightForAllAnimatables === "function"
-    ) {
-      // During spin-out / fall, let the Fall animation dominate.
-      const idleWeight = spinningOut ? 0 : 1;
-      idleAnimationGroup.setWeightForAllAnimatables(idleWeight);
-    }
-    if (
-      turnLeftAnimationGroup &&
-      typeof turnLeftAnimationGroup.setWeightForAllAnimatables === "function"
-    ) {
-      turnLeftAnimationGroup.setWeightForAllAnimatables(
-        currentTurnLeftWeight,
-      );
-    }
-    if (
-      turnRightAnimationGroup &&
-      typeof turnRightAnimationGroup.setWeightForAllAnimatables === "function"
-    ) {
-      turnRightAnimationGroup.setWeightForAllAnimatables(
-        currentTurnRightWeight,
-      );
-    }
-
-    // Start Fall as soon as spin-out triggers (first frame we see spinningOut), so it plays during the full spin.
-    const spinOutJustTriggered = spinningOut && !wasSpinningOutLastFrame;
-    if (spinOutJustTriggered && fallAnimationGroup) {
-      if (typeof fallAnimationGroup.stop === "function") {
-        fallAnimationGroup.stop();
+    // When config maps multiple slots to the same clip, set each unique group's weight
+    // to the max of the weights for the slots that use it (so e.g. idle=1 and turnLeft=0
+    // on the same group yields weight 1).
+    const uniqueGroups = new Set(
+      [
+        idleAnimationGroup,
+        turnLeftAnimationGroup,
+        turnRightAnimationGroup,
+        brakeWaveAnimationGroup,
+      ].filter(Boolean),
+    );
+    for (const group of uniqueGroups) {
+      let w = 0;
+      if (group === idleAnimationGroup && directives.idle) {
+        let idleWeight = directives.idle.weight;
+        if (directives.brakeWave?.active && !brakeWaveAnimationGroup)
+          idleWeight = 1;
+        w = Math.max(w, idleWeight);
       }
-      if (typeof fallAnimationGroup.reset === "function") {
-        fallAnimationGroup.reset();
+      if (group === turnLeftAnimationGroup && directives.turn)
+        w = Math.max(w, directives.turn.leftWeight);
+      if (group === turnRightAnimationGroup && directives.turn)
+        w = Math.max(w, directives.turn.rightWeight);
+      if (group === brakeWaveAnimationGroup && directives.brakeWave?.active)
+        w = Math.max(w, 1);
+      try {
+        if (group && typeof group.setWeightForAllAnimatables === "function")
+          group.setWeightForAllAnimatables(w);
+      } catch {
+        /* best-effort */
       }
-      if (typeof fallAnimationGroup.start === "function") {
-        fallAnimationGroup.start(true);
-        if (typeof fallAnimationGroup.syncWithMask === "function") {
-          fallAnimationGroup.syncWithMask(true);
+    }
+
+    if (
+      directives.brakeWave?.active &&
+      !brakeWaveAnimationGroup &&
+      !brakeWaveMissingWarned
+    ) {
+      brakeWaveMissingWarned = true;
+      if (
+        typeof console !== "undefined" &&
+        typeof console.warn === "function"
+      ) {
+        const names =
+          Array.isArray(characterAnimationGroups) &&
+          characterAnimationGroups.length > 0
+            ? characterAnimationGroups.map((ag) => ag.name).join(", ")
+            : "(none)";
+        console.warn(
+          "[character] Brake-wave requested but clip not found. Set clips.brakeWave to one of:",
+          names,
+        );
+      }
+    }
+    if (directives.brakeWave && brakeWaveAnimationGroup) {
+      if (directives.brakeWave.justStarted) {
+        try {
+          if (typeof brakeWaveAnimationGroup.reset === "function")
+            brakeWaveAnimationGroup.reset();
+          if (typeof brakeWaveAnimationGroup.start === "function")
+            brakeWaveAnimationGroup.start(true);
+        } catch {
+          /* best-effort */
+        }
+      } else if (directives.brakeWave.justStopped) {
+        try {
+          if (
+            typeof brakeWaveAnimationGroup.setWeightForAllAnimatables ===
+            "function"
+          )
+            brakeWaveAnimationGroup.setWeightForAllAnimatables(0);
+          if (typeof brakeWaveAnimationGroup.stop === "function")
+            brakeWaveAnimationGroup.stop();
+          if (typeof brakeWaveAnimationGroup.reset === "function")
+            brakeWaveAnimationGroup.reset();
+        } catch {
+          /* best-effort */
         }
       }
-      needsPostFallRealign = true;
     }
 
-    if (!spinningOut && wasSpinningOutLastFrame) {
-      if (fallAnimationGroup && typeof fallAnimationGroup.stop === "function") {
-        fallAnimationGroup.stop();
+    if (
+      directives.turn &&
+      !(directives.brakeWave && directives.brakeWave.active)
+    ) {
+      if (directives.turn.startLeft && turnLeftAnimationGroup) {
+        try {
+          if (typeof turnLeftAnimationGroup.reset === "function")
+            turnLeftAnimationGroup.reset();
+          if (typeof turnLeftAnimationGroup.start === "function")
+            turnLeftAnimationGroup.start(false);
+        } catch {
+          /* best-effort */
+        }
+      }
+      if (directives.turn.startRight && turnRightAnimationGroup) {
+        try {
+          if (typeof turnRightAnimationGroup.reset === "function")
+            turnRightAnimationGroup.reset();
+          if (typeof turnRightAnimationGroup.start === "function")
+            turnRightAnimationGroup.start(false);
+        } catch {
+          /* best-effort */
+        }
       }
     }
 
-    wasSpinningOutLastFrame = spinningOut;
+    if (directives.fall && fallAnimationGroup) {
+      if (directives.fall.start) {
+        try {
+          if (typeof fallAnimationGroup.stop === "function") {
+            fallAnimationGroup.stop();
+          }
+          if (typeof fallAnimationGroup.reset === "function") {
+            fallAnimationGroup.reset();
+          }
+          if (typeof fallAnimationGroup.start === "function") {
+            fallAnimationGroup.start(true);
+            if (typeof fallAnimationGroup.syncWithMask === "function") {
+              fallAnimationGroup.syncWithMask(true);
+            }
+          }
+        } catch {
+          /* best-effort */
+        }
+      } else if (directives.fall.stop) {
+        try {
+          if (typeof fallAnimationGroup.stop === "function") {
+            fallAnimationGroup.stop();
+          }
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
+
+    if (
+      directives.postFall &&
+      directives.postFall.realignNow &&
+      characterMode === "gltf"
+    ) {
+      playerRoot.rotation.set(0, 0, 0);
+      playerMeshContainer.rotation.set(0, 0, 0);
+      state.player.visualSpinAngle = 0;
+      state.player.angle = 0;
+
+      if (fallAnimationGroup) {
+        try {
+          if (
+            typeof fallAnimationGroup.setWeightForAllAnimatables === "function"
+          ) {
+            fallAnimationGroup.setWeightForAllAnimatables(0);
+          }
+          if (typeof fallAnimationGroup.stop === "function") {
+            fallAnimationGroup.stop();
+          }
+          if (typeof fallAnimationGroup.reset === "function") {
+            fallAnimationGroup.reset();
+          }
+        } catch {
+          /* best-effort */
+        }
+      }
+
+      // After realign: idle group = 1, all other controlled groups = 0. Use unique
+      // groups so that when idle and turnLeft share the same clip we set it once to 1.
+      const uniqueForRealign = new Set(
+        [
+          idleAnimationGroup,
+          turnLeftAnimationGroup,
+          turnRightAnimationGroup,
+          fallAnimationGroup,
+          brakeWaveAnimationGroup,
+        ].filter(Boolean),
+      );
+      for (const group of uniqueForRealign) {
+        try {
+          const isIdleGroup = group === idleAnimationGroup;
+          if (typeof group.setWeightForAllAnimatables === "function")
+            group.setWeightForAllAnimatables(isIdleGroup ? 1 : 0);
+          if (typeof group.stop === "function") group.stop();
+          if (typeof group.reset === "function") group.reset();
+          if (isIdleGroup && typeof group.start === "function")
+            group.start(true);
+        } catch {
+          /* best-effort */
+        }
+      }
+
+      const controlledNames = new Set(
+        Object.values(CHARACTER_ANIMATION_CONFIG.clips),
+      );
+      const groups = Array.isArray(characterAnimationGroups)
+        ? characterAnimationGroups
+        : [];
+      for (const ag of groups) {
+        if (!ag || controlledNames.has(ag.name)) continue;
+        try {
+          if (typeof ag.setWeightForAllAnimatables === "function")
+            ag.setWeightForAllAnimatables(0);
+          if (typeof ag.stop === "function") ag.stop();
+          if (typeof ag.reset === "function") ag.reset();
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
   }
 
-  // After the fall animation has played and spin-out is no longer active, snap
-  // transforms and animation weights back to a clean Idle pose so the board and
-  // character are perfectly aligned again.
-  if (!spinningActive && needsPostFallRealign && characterMode === "gltf") {
-    needsPostFallRealign = false;
-    playerRoot.rotation.set(0, 0, 0);
-    playerMeshContainer.rotation.set(0, 0, 0);
-    state.player.visualSpinAngle = 0;
-    state.player.angle = 0;
-
-    // Fully stop Fall and zero its weight so Idle can take over without a broken blend.
-    if (fallAnimationGroup) {
-      try {
-        if (typeof fallAnimationGroup.setWeightForAllAnimatables === "function") {
-          fallAnimationGroup.setWeightForAllAnimatables(0);
-        }
-        if (typeof fallAnimationGroup.stop === "function") {
-          fallAnimationGroup.stop();
-        }
-        if (typeof fallAnimationGroup.reset === "function") {
-          fallAnimationGroup.reset();
-        }
-      } catch {
-        // Best-effort; ignore if API differs.
-      }
-    }
-
-    if (idleAnimationGroup) {
-      try {
-        if (typeof idleAnimationGroup.stop === "function") {
-          idleAnimationGroup.stop();
-        }
-        if (typeof idleAnimationGroup.reset === "function") {
-          idleAnimationGroup.reset();
-        }
-        if (typeof idleAnimationGroup.start === "function") {
-          idleAnimationGroup.start(true);
-        }
-        if (
-          typeof idleAnimationGroup.setWeightForAllAnimatables === "function"
-        ) {
-          idleAnimationGroup.setWeightForAllAnimatables(1);
-        }
-      } catch {
-        // Best-effort reset; ignore if the API differs.
-      }
-    }
-
-    // Ensure no other clips (e.g. Start_Wave) are active after fall.
-    const controlledNames = new Set([
-      "Idle",
-      "Turn_Left",
-      "Turn_Right",
-      "Fall",
-    ]);
-    const groups = Array.isArray(characterAnimationGroups)
-      ? characterAnimationGroups
-      : [];
-    for (const ag of groups) {
-      if (!ag || ag.name === "Idle") continue;
-      try {
-        if (typeof ag.setWeightForAllAnimatables === "function")
-          ag.setWeightForAllAnimatables(0);
-        if (typeof ag.stop === "function") ag.stop();
-        if (typeof ag.reset === "function") ag.reset();
-      } catch {
-        // Best-effort
-      }
-    }
-
-    if (
-      turnLeftAnimationGroup &&
-      typeof turnLeftAnimationGroup.setWeightForAllAnimatables === "function"
-    ) {
-      turnLeftAnimationGroup.setWeightForAllAnimatables(0);
-    }
-    if (
-      turnRightAnimationGroup &&
-      typeof turnRightAnimationGroup.setWeightForAllAnimatables === "function"
-    ) {
-      turnRightAnimationGroup.setWeightForAllAnimatables(0);
-    }
-
-    currentTurnLeftWeight = 0;
-    currentTurnRightWeight = 0;
-    targetTurnLeftWeight = 0;
-    targetTurnRightWeight = 0;
-  }
+  // After the fall animation has played and spin-out is no longer active,
+  // additional pose realignment and clip cleanup is handled via directives
+  // above when characterMode is \"gltf\".
 
   ground.position.set(state.world.groundX, 0, state.world.groundZ);
 
@@ -1276,18 +1468,95 @@ export function syncFromState(state) {
 
   shieldMesh.isVisible = state.playerStats.invincibleTimer > 0;
   if (shieldMesh.isVisible) {
+    const margin = 1.1;
+    const shieldSizeFactor = 0.07;
+    const charScale =
+      characterMode === "gltf" ? (CONFIG.assets?.characterScale ?? 1) : 1;
+    const sphereLocalDiameter = 3;
+    const baseScale =
+      (charScale * margin * shieldSizeFactor) / sphereLocalDiameter;
     const pulseTime = state.visuals.shieldPulseTime;
-    if (pulseTime > 0) {
-      shieldMesh.scaling.setAll(1 + 0.3 * (pulseTime / 0.25));
-    } else {
-      shieldMesh.scaling.setAll(1);
-    }
+    const scale =
+      pulseTime > 0 ? baseScale * (1 + 0.3 * (pulseTime / 0.25)) : baseScale;
+    shieldMesh.scaling.setAll(scale);
     shieldMesh.material.alpha = state.visuals.shieldOpacity ?? 0.3;
   }
   const showDynamite = Boolean(state.playerStats?.hasDynamite);
   dynamiteMesh.isVisible = showDynamite;
   for (const child of dynamiteMesh.getChildMeshes()) {
     child.isVisible = showDynamite;
+  }
+  if (glideSurfaceMesh && glideSurfaceMesh.material) {
+    const targetOpacity = hasGlide ? 1 : 0;
+    const lerpFactor = 0.15;
+    glideSurfaceOpacity += (targetOpacity - glideSurfaceOpacity) * lerpFactor;
+    if (!hasGlide && Math.abs(glideSurfaceOpacity) < 0.01) {
+      glideSurfaceOpacity = 0;
+    }
+    glideSurfaceMesh.isVisible = glideSurfaceOpacity > 0.01;
+    glideSurfaceMesh.material.alpha = glideSurfaceOpacity;
+  }
+  const proceduralDefaults = {
+    board: 0x333333,
+    leftLeg: CONFIG.colors.pants,
+    rightLeg: CONFIG.colors.pants,
+    torso: CONFIG.colors.jacket,
+    leftArm: CONFIG.colors.jacket,
+    rightArm: CONFIG.colors.jacket,
+    bag: CONFIG.colors.backpack,
+    head: CONFIG.colors.helmet,
+    goggles: CONFIG.colors.goggles,
+  };
+  function isShieldOrDynamite(mesh) {
+    if (
+      mesh === shieldMesh ||
+      mesh === dynamiteMesh ||
+      mesh === glideSurfaceMesh
+    )
+      return true;
+    let n = mesh.parent;
+    while (n) {
+      if (n === dynamiteMesh) return true;
+      n = n.parent;
+    }
+    return false;
+  }
+  const allContainerMeshes = playerMeshContainer.getChildMeshes(true);
+  const characterMeshes = allContainerMeshes.filter(
+    (m) => !isShieldOrDynamite(m),
+  );
+  function getMaterials(mesh) {
+    const mat = mesh.material;
+    if (!mat) return [];
+    if (mat.subMaterials && Array.isArray(mat.subMaterials)) {
+      return mat.subMaterials.filter(Boolean);
+    }
+    return [mat];
+  }
+  function restoreMaterial(mat) {
+    if (!glideOriginalColors.has(mat)) return;
+    const cached = glideOriginalColors.get(mat);
+    if (cached.diffuseColor) mat.diffuseColor = cached.diffuseColor;
+    if (cached.albedoColor) mat.albedoColor = cached.albedoColor;
+    glideOriginalColors.delete(mat);
+  }
+  if (!hasGlide) {
+    for (const mesh of characterMeshes) {
+      for (const mat of getMaterials(mesh)) {
+        if (glideOriginalColors.has(mat)) {
+          restoreMaterial(mat);
+        } else if (
+          characterMode === "procedural" &&
+          mesh.name &&
+          proceduralDefaults[mesh.name] != null &&
+          mat.diffuseColor != null
+        ) {
+          mat.diffuseColor = hexToColor3(proceduralDefaults[mesh.name]);
+        } else if (characterMode === "procedural" && mat.diffuseColor != null) {
+          mat.diffuseColor = hexToColor3(0x333333);
+        }
+      }
+    }
   }
 
   const particleIds = new Set(state.particles.map((x) => x.id));
@@ -1384,6 +1653,8 @@ export function resize(width, height) {
 }
 
 export function dispose() {
+  glideOriginalColors.clear();
+  glideSurfaceOpacity = 0;
   if (characterMode === "gltf" && characterRoot) {
     for (const ag of characterAnimationGroups) {
       if (ag && typeof ag.stop === "function") ag.stop();
@@ -1393,10 +1664,10 @@ export function dispose() {
     idleAnimationGroup = null;
     turnLeftAnimationGroup = null;
     turnRightAnimationGroup = null;
-    currentTurnLeftWeight = 0;
-    currentTurnRightWeight = 0;
-    targetTurnLeftWeight = 0;
-    targetTurnRightWeight = 0;
+    fallAnimationGroup = null;
+    brakeWaveAnimationGroup = null;
+    brakeWaveMissingWarned = false;
+    characterAnimationRuntime = createInitialAnimationRuntime();
     characterRoot.dispose();
     characterRoot = null;
     characterMode = "procedural";
