@@ -28,6 +28,9 @@ dist/
 # Vite
 .vite/
 
+# Test output
+test-results/
+
 # Temporary files
 *.tmp
 *.temp
